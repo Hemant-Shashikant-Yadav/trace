@@ -30,6 +30,7 @@ import { useProjectMembersSimple } from "@/hooks/useProjectMembers";
 import { AssetHistoryPopover } from "./AssetHistoryPopover";
 import { ReworkModal } from "./ReworkModal";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AssetRowProps {
   asset: Asset;
@@ -96,6 +97,8 @@ export const AssetRow = React.memo(
     const [reworkModalOpen, setReworkModalOpen] = useState(false);
     const [pendingStatus, setPendingStatus] = useState<"pending" | "received" | "implemented" | null>(null);
     
+    const queryClient = useQueryClient();
+    
     // Fetch project members for assignee dropdown
     const { data: members = [] } = useProjectMembersSimple(projectId);
 
@@ -135,7 +138,7 @@ export const AssetRow = React.memo(
     };
 
     // Handle status change with interception
-    const handleStatusChange = (newStatus: "pending" | "received" | "implemented") => {
+    const handleStatusChange = async (newStatus: "pending" | "received" | "implemented") => {
       const oldStatus = asset.status;
       
       if (isBackwardTransition(oldStatus, newStatus)) {
@@ -145,6 +148,12 @@ export const AssetRow = React.memo(
       } else {
         // Normal forward transition
         onStatusUpdate(asset.id, newStatus);
+        
+        // Invalidate asset history to refresh UI immediately
+        // Small delay to allow DB trigger to complete
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["asset-history", asset.id] });
+        }, 300);
       }
     };
 
@@ -162,6 +171,9 @@ export const AssetRow = React.memo(
         .eq("id", asset.id);
 
       if (!error) {
+        // Invalidate asset history to refresh UI
+        queryClient.invalidateQueries({ queryKey: ["asset-history", asset.id] });
+        
         // Close modal and trigger parent refetch
         setReworkModalOpen(false);
         setPendingStatus(null);
