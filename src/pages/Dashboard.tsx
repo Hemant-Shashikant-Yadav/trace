@@ -433,6 +433,7 @@ const Dashboard = () => {
           <div className="mt-6">
             <AssetTable
               assets={assets}
+              projectId={selectedProject.id}
               onStatusUpdate={handleStatusUpdate}
               onAssigneeUpdate={handleAssigneeUpdate}
               onDeleteAsset={handleDeleteAsset}

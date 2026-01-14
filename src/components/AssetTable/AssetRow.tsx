@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Clock, User, ChevronDown, Trash2 } from "lucide-react";
+import { Clock, User, ChevronDown, Trash2, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   TableCell,
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,9 +26,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { Asset } from "./types";
+import { useProjectMembersSimple } from "@/hooks/useProjectMembers";
+import { AssetHistoryPopover } from "./AssetHistoryPopover";
 
 interface AssetRowProps {
   asset: Asset;
+  projectId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
@@ -84,21 +88,19 @@ const StatusBadge = ({
 };
 
 export const AssetRow = React.memo(
-  ({ asset, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: AssetRowProps) => {
-    const [editingAssignee, setEditingAssignee] = useState(false);
-    const [assigneeValue, setAssigneeValue] = useState("");
+  ({ asset, projectId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: AssetRowProps) => {
     const [editingNotes, setEditingNotes] = useState(false);
     const [notesValue, setNotesValue] = useState("");
+    
+    // Fetch project members for assignee dropdown
+    const { data: members = [] } = useProjectMembersSimple(projectId);
 
-    const handleAssigneeEdit = () => {
-      setEditingAssignee(true);
-      setAssigneeValue(asset.assigned_to || "");
+    const handleAssigneeSelect = (email: string) => {
+      onAssigneeUpdate(asset.id, email);
     };
 
-    const handleAssigneeSave = () => {
-      onAssigneeUpdate(asset.id, assigneeValue);
-      setEditingAssignee(false);
-      setAssigneeValue("");
+    const handleUnassign = () => {
+      onAssigneeUpdate(asset.id, "");
     };
 
     const handleNotesEdit = () => {
@@ -169,24 +171,32 @@ export const AssetRow = React.memo(
           </DropdownMenu>
         </TableCell>
         <TableCell>
-          {editingAssignee ? (
-            <Input
-              value={assigneeValue}
-              onChange={(e) => setAssigneeValue(e.target.value)}
-              onBlur={handleAssigneeSave}
-              onKeyDown={(e) => e.key === "Enter" && handleAssigneeSave()}
-              autoFocus
-              className="h-7 text-xs bg-input border-border w-32"
-            />
-          ) : (
-            <button
-              onClick={handleAssigneeEdit}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-            >
-              <User className="w-3 h-3" />
-              {asset.assigned_to || "Unassigned"}
-            </button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                <User className="w-3 h-3" />
+                {asset.assigned_to || "Unassigned"}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-card border-border">
+              <DropdownMenuItem onClick={handleUnassign} className="text-muted-foreground">
+                <UserPlus className="w-3 h-3 mr-2" />
+                Unassigned
+              </DropdownMenuItem>
+              {members.length > 0 && <DropdownMenuSeparator />}
+              {members.map((member) => (
+                <DropdownMenuItem
+                  key={member.user_id}
+                  onClick={() => handleAssigneeSelect(member.email)}
+                  className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+                >
+                  <User className="w-3 h-3 mr-2" />
+                  {member.email}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </TableCell>
         <TableCell>
           {editingNotes ? (
@@ -209,20 +219,23 @@ export const AssetRow = React.memo(
           )}
         </TableCell>
         <TableCell className="text-xs">
-          <div className="space-y-1">
-            {asset.received_at && (
-              <div className="text-warning/80">
-                Recv: {formatTimestamp(asset.received_at)}
-              </div>
-            )}
-            {asset.implemented_at && (
-              <div className="text-success/80">
-                Impl: {formatTimestamp(asset.implemented_at)}
-              </div>
-            )}
-            {!asset.received_at && !asset.implemented_at && (
-              <span className="text-muted-foreground/50">—</span>
-            )}
+          <div className="flex items-center gap-2">
+            <div className="space-y-1 flex-1">
+              {asset.received_at && (
+                <div className="text-warning/80">
+                  Recv: {formatTimestamp(asset.received_at)}
+                </div>
+              )}
+              {asset.implemented_at && (
+                <div className="text-success/80">
+                  Impl: {formatTimestamp(asset.implemented_at)}
+                </div>
+              )}
+              {!asset.received_at && !asset.implemented_at && (
+                <span className="text-muted-foreground/50">—</span>
+              )}
+            </div>
+            <AssetHistoryPopover assetId={asset.id} />
           </div>
         </TableCell>
         <TableCell>
@@ -264,14 +277,15 @@ export const AssetRow = React.memo(
   },
   // Custom comparison function for memo optimization
   (prevProps, nextProps) => {
-    // Only re-render if asset ID or updated_at changed
+    // Only re-render if asset data or projectId changed
     return (
       prevProps.asset.id === nextProps.asset.id &&
       prevProps.asset.updated_at === nextProps.asset.updated_at &&
       prevProps.asset.status === nextProps.asset.status &&
       prevProps.asset.revision_count === nextProps.asset.revision_count &&
       prevProps.asset.assigned_to === nextProps.asset.assigned_to &&
-      prevProps.asset.notes === nextProps.asset.notes
+      prevProps.asset.notes === nextProps.asset.notes &&
+      prevProps.projectId === nextProps.projectId
     );
   }
 );

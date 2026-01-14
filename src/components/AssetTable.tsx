@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { FileCode, ArrowUpDown, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +16,7 @@ import { FolderNode } from "./AssetTable/FolderNode";
 
 interface AssetTableProps {
   assets: Asset[];
+  projectId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
@@ -23,6 +24,7 @@ interface AssetTableProps {
 
 export const AssetTable = ({
   assets,
+  projectId,
   onStatusUpdate,
   onAssigneeUpdate,
   onDeleteAsset,
@@ -34,7 +36,7 @@ export const AssetTable = ({
   const [userEmail, setUserEmail] = useState<string>("");
 
   // Get current user email for "My Tasks" filter
-  useState(() => {
+  useEffect(() => {
     import("@/integrations/supabase/client").then(({ supabase }) => {
       supabase.auth.getUser().then(({ data }) => {
         if (data.user?.email) {
@@ -42,7 +44,7 @@ export const AssetTable = ({
         }
       });
     });
-  });
+  }, []);
 
   // Stable callbacks for memoization
   const handleStatusUpdate = useCallback((assetId: string, status: "pending" | "received" | "implemented") => {
@@ -218,6 +220,7 @@ export const AssetTable = ({
                 key={node.path}
                 node={node}
                 depth={0}
+                projectId={projectId}
                 onStatusUpdate={handleStatusUpdate}
                 onAssigneeUpdate={handleAssigneeUpdate}
                 onDeleteAsset={handleDeleteAsset}

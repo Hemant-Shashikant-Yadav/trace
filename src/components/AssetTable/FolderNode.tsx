@@ -14,13 +14,14 @@ import { countAssets } from "./buildFolderTree";
 interface FolderNodeProps {
   node: TreeNode;
   depth: number;
+  projectId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
 }
 
 export const FolderNode = React.memo(
-  ({ node, depth, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: FolderNodeProps) => {
+  ({ node, depth, projectId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: FolderNodeProps) => {
     const [isExpanded, setIsExpanded] = useState(true);
 
     // If this is an asset node, render the AssetRow
@@ -28,6 +29,7 @@ export const FolderNode = React.memo(
       return (
         <AssetRow
           asset={node.asset}
+          projectId={projectId}
           onStatusUpdate={onStatusUpdate}
           onAssigneeUpdate={onAssigneeUpdate}
           onDeleteAsset={onDeleteAsset}
@@ -96,6 +98,7 @@ export const FolderNode = React.memo(
                       key={childNode.path}
                       node={childNode}
                       depth={depth + 1}
+                      projectId={projectId}
                       onStatusUpdate={onStatusUpdate}
                       onAssigneeUpdate={onAssigneeUpdate}
                       onDeleteAsset={onDeleteAsset}
@@ -137,6 +140,7 @@ export const FolderNode = React.memo(
                               key={assetNode.path}
                               node={assetNode}
                               depth={depth + 1}
+                              projectId={projectId}
                               onStatusUpdate={onStatusUpdate}
                               onAssigneeUpdate={onAssigneeUpdate}
                               onDeleteAsset={onDeleteAsset}
@@ -156,11 +160,12 @@ export const FolderNode = React.memo(
   },
   // Custom comparison function for memo optimization
   (prevProps, nextProps) => {
-    // Only re-render if node reference changed or depth changed
+    // Only re-render if node reference, depth, or projectId changed
     // Since we rebuild the tree when assets change, referential equality works here
     return (
       prevProps.node === nextProps.node &&
-      prevProps.depth === nextProps.depth
+      prevProps.depth === nextProps.depth &&
+      prevProps.projectId === nextProps.projectId
     );
   }
 );
