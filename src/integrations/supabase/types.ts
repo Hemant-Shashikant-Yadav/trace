@@ -14,16 +14,61 @@ export type Database = {
   }
   public: {
     Tables: {
+      asset_history: {
+        Row: {
+          asset_id: string
+          changed_by: string
+          created_at: string
+          id: string
+          new_status: Database["public"]["Enums"]["asset_status"]
+          old_status: Database["public"]["Enums"]["asset_status"]
+        }
+        Insert: {
+          asset_id: string
+          changed_by: string
+          created_at?: string
+          id?: string
+          new_status: Database["public"]["Enums"]["asset_status"]
+          old_status: Database["public"]["Enums"]["asset_status"]
+        }
+        Update: {
+          asset_id?: string
+          changed_by?: string
+          created_at?: string
+          id?: string
+          new_status?: Database["public"]["Enums"]["asset_status"]
+          old_status?: Database["public"]["Enums"]["asset_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_history_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           assigned_to: string | null
           created_at: string
           file_path: string
+          folder: string | null
           id: string
           implemented_at: string | null
           name: string
+          notes: string | null
           project_id: string
           received_at: string | null
+          revision_count: number
           status: Database["public"]["Enums"]["asset_status"]
           updated_at: string
         }
@@ -31,11 +76,14 @@ export type Database = {
           assigned_to?: string | null
           created_at?: string
           file_path: string
+          folder?: string | null
           id?: string
           implemented_at?: string | null
           name: string
+          notes?: string | null
           project_id: string
           received_at?: string | null
+          revision_count?: number
           status?: Database["public"]["Enums"]["asset_status"]
           updated_at?: string
         }
@@ -43,11 +91,14 @@ export type Database = {
           assigned_to?: string | null
           created_at?: string
           file_path?: string
+          folder?: string | null
           id?: string
           implemented_at?: string | null
           name?: string
+          notes?: string | null
           project_id?: string
           received_at?: string | null
+          revision_count?: number
           status?: Database["public"]["Enums"]["asset_status"]
           updated_at?: string
         }
@@ -57,6 +108,42 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_members: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]

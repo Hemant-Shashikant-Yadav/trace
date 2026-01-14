@@ -32,11 +32,15 @@ interface Asset {
   project_id: string;
   name: string;
   file_path: string;
+  folder: string | null;
   status: "pending" | "received" | "implemented";
   assigned_to: string | null;
   received_at: string | null;
   implemented_at: string | null;
+  revision_count: number;
+  notes: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 const Dashboard = () => {
@@ -150,12 +154,19 @@ const Dashboard = () => {
   const handleImportAssets = async (filePaths: string[]) => {
     if (!selectedProject || !user) return;
 
-    const newAssets = filePaths.map((path) => ({
-      project_id: selectedProject.id,
-      name: path.split("/").pop() || path,
-      file_path: path,
-      status: "pending" as const,
-    }));
+    const newAssets = filePaths.map((path) => {
+      // Extract folder from path (everything before the last /)
+      const lastSlashIndex = path.lastIndexOf("/");
+      const folder = lastSlashIndex > 0 ? path.substring(0, lastSlashIndex) : null;
+      
+      return {
+        project_id: selectedProject.id,
+        name: path.split("/").pop() || path,
+        file_path: path,
+        folder: folder,
+        status: "pending" as const,
+      };
+    });
 
     const { error } = await supabase.from("assets").insert(newAssets);
 
@@ -178,12 +189,26 @@ const Dashboard = () => {
     assetId: string,
     newStatus: "pending" | "received" | "implemented"
   ) => {
+    // Find the current asset to check for backward transitions
+    const currentAsset = assets.find((a) => a.id === assetId);
+    if (!currentAsset) return;
+
     const updates: Partial<Asset> = { status: newStatus };
 
     if (newStatus === "received") {
       updates.received_at = new Date().toISOString();
     } else if (newStatus === "implemented") {
       updates.implemented_at = new Date().toISOString();
+    }
+
+    // Check for backward transitions and increment revision_count
+    // Note: The database trigger will also handle this, but we update local state
+    const isBackwardTransition = 
+      (currentAsset.status === "implemented" && (newStatus === "received" || newStatus === "pending")) ||
+      (currentAsset.status === "received" && newStatus === "pending");
+    
+    if (isBackwardTransition) {
+      updates.revision_count = currentAsset.revision_count + 1;
     }
 
     const { error } = await supabase
@@ -198,11 +223,8 @@ const Dashboard = () => {
         variant: "destructive",
       });
     } else {
-      setAssets(
-        assets.map((asset) =>
-          asset.id === assetId ? { ...asset, ...updates } : asset
-        )
-      );
+      // Refetch to get the latest data including any trigger updates
+      fetchAssets(selectedProject!.id);
     }
   };
 
@@ -260,6 +282,8 @@ const Dashboard = () => {
       updates.implemented_at = new Date().toISOString();
     }
 
+    // Note: The database trigger will handle revision counting automatically
+    // for backward transitions during bulk updates
     const { error } = await supabase
       .from("assets")
       .update(updates)
@@ -272,15 +296,12 @@ const Dashboard = () => {
         variant: "destructive",
       });
     } else {
-      setAssets(
-        assets.map((asset) =>
-          assetIds.includes(asset.id) ? { ...asset, ...updates } : asset
-        )
-      );
       toast({
         title: "Bulk Update Complete",
         description: `${assetIds.length} assets updated to ${newStatus.toUpperCase()}.`,
       });
+      // Refetch to get the latest data including any trigger updates
+      fetchAssets(selectedProject!.id);
     }
   };
 
