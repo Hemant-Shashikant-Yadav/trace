@@ -107,7 +107,7 @@ export const AssetHistoryPopover: React.FC<AssetHistoryPopoverProps> = ({ assetI
 
                     {/* Changed By */}
                     <div className="text-xs text-muted-foreground">
-                      by {entry.user_email || "Unknown User"}
+                      by {entry.user_nickname || entry.user_email || "Unknown User"}
                     </div>
                   </div>
                 );

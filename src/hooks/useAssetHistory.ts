@@ -8,6 +8,7 @@ export interface AssetHistoryEntry {
   new_status: "pending" | "received" | "implemented";
   created_at: string;
   user_email?: string;
+  user_nickname?: string | null;
   changed_by: string;
 }
 
@@ -38,19 +39,32 @@ export function useAssetHistory(assetId: string | null) {
         return [];
       }
 
-      // Try to get current user to see if we can resolve at least their email
+      // Try to get current user to see if we can resolve at least their email and nickname
       const { data: { user } } = await supabase.auth.getUser();
+      
+      // Try to fetch profile for current user
+      let currentUserProfile = null;
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("nickname")
+          .eq("id", user.id)
+          .single();
+        currentUserProfile = profile;
+      }
 
-      // Enhance history with user emails where possible
+      // Enhance history with user emails and nicknames where possible
       const enhancedHistory = history.map((entry) => {
         const enhanced: AssetHistoryEntry = {
           ...entry,
           user_email: undefined,
+          user_nickname: undefined,
         };
 
-        // If the changed_by matches current user, add their email
+        // If the changed_by matches current user, add their email and nickname
         if (user && entry.changed_by === user.id) {
           enhanced.user_email = user.email || undefined;
+          enhanced.user_nickname = currentUserProfile?.nickname || null;
         }
 
         return enhanced;

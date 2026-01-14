@@ -9,9 +9,12 @@ import { AssetTable } from "@/components/AssetTable";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import { ProjectStats } from "@/components/ProjectStats";
 import { BulkStatusUpdate } from "@/components/BulkStatusUpdate";
-import { Terminal, LogOut, Plus, Folder } from "lucide-react";
+import { UserProfileModal } from "@/components/UserProfileModal";
+import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
+import { Terminal, LogOut, Plus, Folder, UserCircle, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +27,7 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
+  user_id: string;
   created_at: string;
 }
 
@@ -50,7 +54,10 @@ const Dashboard = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [newProjectName, setNewProjectName] = useState("");
+  const [inviteEmails, setInviteEmails] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -127,6 +134,7 @@ const Dashboard = () => {
   const createProject = async () => {
     if (!newProjectName.trim() || !user) return;
 
+    // Create the project first
     const { data, error } = await supabase
       .from("projects")
       .insert({ name: newProjectName.trim(), user_id: user.id })
@@ -139,16 +147,83 @@ const Dashboard = () => {
         description: error.message,
         variant: "destructive",
       });
-    } else {
-      toast({
-        title: "Project Created",
-        description: `${newProjectName} has been initialized.`,
-      });
-      setProjects([data, ...projects]);
-      setSelectedProject(data);
-      setNewProjectName("");
-      setCreateDialogOpen(false);
+      return;
     }
+
+    // Process member invites if any
+    let invitedCount = 0;
+    const invalidEmails: string[] = [];
+
+    if (inviteEmails.trim()) {
+      // Parse emails (split by comma, trim whitespace)
+      const emailList = inviteEmails
+        .split(",")
+        .map(email => email.trim().toLowerCase())
+        .filter(email => email.length > 0);
+
+      // Deduplicate
+      const uniqueEmails = Array.from(new Set(emailList));
+
+      // Remove owner's email if present
+      const membersToInvite = uniqueEmails.filter(email => email !== user.email?.toLowerCase());
+
+      // Process each email
+      for (const email of membersToInvite) {
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          invalidEmails.push(email);
+          continue;
+        }
+
+        // Look up user in profiles table
+        const { data: profile } = await (supabase as any)
+          .from("profiles")
+          .select("id")
+          .eq("email", email)
+          .single();
+
+        if (profile) {
+          // Add to project_members
+          const { error: memberError } = await supabase
+            .from("project_members")
+            .insert({
+              project_id: data.id,
+              user_id: profile.id,
+            });
+
+          if (!memberError) {
+            invitedCount++;
+          }
+        } else {
+          invalidEmails.push(email);
+        }
+      }
+    }
+
+    // Show success toast with invite results
+    let description = `${newProjectName} has been created.`;
+    if (invitedCount > 0) {
+      description += ` ${invitedCount} member${invitedCount > 1 ? 's' : ''} invited.`;
+    }
+    if (invalidEmails.length > 0) {
+      toast({
+        title: "Some emails not found",
+        description: `These emails were not found: ${invalidEmails.join(", ")}`,
+        variant: "destructive",
+      });
+    }
+
+    toast({
+      title: "Project Created",
+      description,
+    });
+
+    setProjects([data, ...projects]);
+    setSelectedProject(data);
+    setNewProjectName("");
+    setInviteEmails("");
+    setCreateDialogOpen(false);
   };
 
   const handleImportAssets = async (filePaths: string[]) => {
@@ -341,6 +416,15 @@ const Dashboard = () => {
                 {user?.email}
               </span>
               <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setProfileModalOpen(true)}
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title="User Settings"
+              >
+                <UserCircle className="w-5 h-5" />
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={handleSignOut}
@@ -365,6 +449,19 @@ const Dashboard = () => {
               onSelect={setSelectedProject}
             />
             
+            {/* Settings Icon (Owner Only) */}
+            {selectedProject && user && selectedProject.user_id === user.id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSettingsModalOpen(true)}
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title="Project Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
+            
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -383,13 +480,26 @@ const Dashboard = () => {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-4">
-                  <Input
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Project codename..."
-                    className="bg-input border-border"
-                    onKeyDown={(e) => e.key === "Enter" && createProject()}
-                  />
+                  <div className="space-y-2">
+                    <Input
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      placeholder="Project codename..."
+                      className="bg-input border-border"
+                      onKeyDown={(e) => e.key === "Enter" && !inviteEmails && createProject()}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Textarea
+                      value={inviteEmails}
+                      onChange={(e) => setInviteEmails(e.target.value)}
+                      placeholder="Invite team members (comma-separated emails)&#10;Example: alice@team.com, bob@team.com"
+                      className="bg-input border-border min-h-[80px]"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Optional: Invite members who already have accounts
+                    </p>
+                  </div>
                   <Button
                     onClick={createProject}
                     className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
@@ -451,6 +561,32 @@ const Dashboard = () => {
           </div>
         )}
       </main>
+
+      {/* User Profile Modal */}
+      {user && (
+        <UserProfileModal
+          isOpen={profileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+          userId={user.id}
+          userEmail={user.email || null}
+        />
+      )}
+
+      {/* Project Settings Modal */}
+      {selectedProject && user && (
+        <ProjectSettingsModal
+          isOpen={settingsModalOpen}
+          onClose={() => setSettingsModalOpen(false)}
+          projectId={selectedProject.id}
+          projectName={selectedProject.name}
+          projectOwnerId={selectedProject.user_id}
+          currentUserId={user.id}
+          onProjectDeleted={() => {
+            setSelectedProject(null);
+            fetchProjects();
+          }}
+        />
+      )}
     </div>
   );
 };

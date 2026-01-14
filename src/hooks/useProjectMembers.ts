@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface ProjectMember {
   user_id: string;
   email: string;
+  nickname?: string | null;
 }
 
 /**
@@ -75,6 +76,7 @@ export function useProjectMembers(projectId: string | null) {
 /**
  * Simplified version that returns current user and project owner
  * This works around RLS limitations without needing RPC functions
+ * Now includes nickname from profiles table
  */
 export function useProjectMembersSimple(projectId: string | null) {
   return useQuery({
@@ -87,9 +89,17 @@ export function useProjectMembersSimple(projectId: string | null) {
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) {
+        // Try to get user's profile for nickname
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("nickname")
+          .eq("id", user.id)
+          .single();
+
         members.push({
           user_id: user.id,
           email: user.email,
+          nickname: profile?.nickname || null,
         });
       }
 

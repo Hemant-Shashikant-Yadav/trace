@@ -28,6 +28,8 @@ import { format } from "date-fns";
 import { Asset } from "./types";
 import { useProjectMembersSimple } from "@/hooks/useProjectMembers";
 import { AssetHistoryPopover } from "./AssetHistoryPopover";
+import { ReworkModal } from "./ReworkModal";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AssetRowProps {
   asset: Asset;
@@ -91,6 +93,8 @@ export const AssetRow = React.memo(
   ({ asset, projectId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: AssetRowProps) => {
     const [editingNotes, setEditingNotes] = useState(false);
     const [notesValue, setNotesValue] = useState("");
+    const [reworkModalOpen, setReworkModalOpen] = useState(false);
+    const [pendingStatus, setPendingStatus] = useState<"pending" | "received" | "implemented" | null>(null);
     
     // Fetch project members for assignee dropdown
     const { data: members = [] } = useProjectMembersSimple(projectId);
@@ -110,7 +114,6 @@ export const AssetRow = React.memo(
 
     const handleNotesSave = async () => {
       // Update notes via supabase
-      const { supabase } = await import("@/integrations/supabase/client");
       await supabase
         .from("assets")
         .update({ notes: notesValue || null })
@@ -123,6 +126,47 @@ export const AssetRow = React.memo(
     const formatTimestamp = (timestamp: string | null) => {
       if (!timestamp) return "—";
       return format(new Date(timestamp), "MMM d, HH:mm");
+    };
+
+    // Check if status change is backward (requires rework modal)
+    const isBackwardTransition = (oldStatus: string, newStatus: string): boolean => {
+      const statusOrder = { pending: 0, received: 1, implemented: 2 };
+      return statusOrder[newStatus as keyof typeof statusOrder] < statusOrder[oldStatus as keyof typeof statusOrder];
+    };
+
+    // Handle status change with interception
+    const handleStatusChange = (newStatus: "pending" | "received" | "implemented") => {
+      const oldStatus = asset.status;
+      
+      if (isBackwardTransition(oldStatus, newStatus)) {
+        // Open rework modal
+        setPendingStatus(newStatus);
+        setReworkModalOpen(true);
+      } else {
+        // Normal forward transition
+        onStatusUpdate(asset.id, newStatus);
+      }
+    };
+
+    // Handle rework submission
+    const handleReworkSubmit = async (reason: string) => {
+      if (!pendingStatus) return;
+
+      // Update status and notes in database
+      const { error } = await supabase
+        .from("assets")
+        .update({
+          status: pendingStatus,
+          notes: reason,
+        })
+        .eq("id", asset.id);
+
+      if (!error) {
+        // Close modal and trigger parent refetch
+        setReworkModalOpen(false);
+        setPendingStatus(null);
+        onStatusUpdate(asset.id, pendingStatus);
+      }
     };
 
     return (
@@ -150,19 +194,19 @@ export const AssetRow = React.memo(
             </DropdownMenuTrigger>
             <DropdownMenuContent className="bg-card border-border">
               <DropdownMenuItem
-                onClick={() => onStatusUpdate(asset.id, "pending")}
+                onClick={() => handleStatusChange("pending")}
                 className="text-destructive focus:text-destructive"
               >
                 PENDING
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => onStatusUpdate(asset.id, "received")}
+                onClick={() => handleStatusChange("received")}
                 className="text-warning focus:text-warning"
               >
                 RECEIVED
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => onStatusUpdate(asset.id, "implemented")}
+                onClick={() => handleStatusChange("implemented")}
                 className="text-success focus:text-success"
               >
                 IMPLEMENTED
@@ -192,7 +236,7 @@ export const AssetRow = React.memo(
                   className={asset.assigned_to === member.email ? "bg-secondary" : ""}
                 >
                   <User className="w-3 h-3 mr-2" />
-                  {member.email}
+                  {member.nickname || member.email}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -272,6 +316,19 @@ export const AssetRow = React.memo(
             </AlertDialogContent>
           </AlertDialog>
         </TableCell>
+
+        {/* Rework Modal */}
+        <ReworkModal
+          isOpen={reworkModalOpen}
+          onClose={() => {
+            setReworkModalOpen(false);
+            setPendingStatus(null);
+          }}
+          onSubmit={handleReworkSubmit}
+          assetName={asset.name}
+          oldStatus={asset.status}
+          newStatus={pendingStatus || "pending"}
+        />
       </TableRow>
     );
   },
