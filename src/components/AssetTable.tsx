@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileCode, Clock, User, ChevronDown } from "lucide-react";
+import { FileCode, Clock, User, ChevronDown, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -16,6 +16,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
 interface Asset {
@@ -34,6 +45,7 @@ interface AssetTableProps {
   assets: Asset[];
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
+  onDeleteAsset: (assetId: string) => void;
 }
 
 const StatusBadge = ({
@@ -74,6 +86,7 @@ export const AssetTable = ({
   assets,
   onStatusUpdate,
   onAssigneeUpdate,
+  onDeleteAsset,
 }: AssetTableProps) => {
   const [editingAssignee, setEditingAssignee] = useState<string | null>(null);
   const [assigneeValue, setAssigneeValue] = useState("");
@@ -166,6 +179,9 @@ export const AssetTable = ({
                 <Clock className="w-3 h-3 inline mr-1" />
                 TIMESTAMPS
               </TableHead>
+              <TableHead className="text-muted-foreground font-display text-xs tracking-wider w-12">
+                ACTIONS
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -249,6 +265,40 @@ export const AssetTable = ({
                       <span className="text-muted-foreground/50">—</span>
                     )}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="bg-card border-border">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="font-display tracking-wider text-foreground">
+                          CONFIRM DELETION
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-muted-foreground">
+                          Are you sure you want to delete{" "}
+                          <span className="font-mono text-foreground">{asset.name}</span>?
+                          This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="border-border">CANCEL</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => onDeleteAsset(asset.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          DELETE
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </TableCell>
               </TableRow>
             ))}

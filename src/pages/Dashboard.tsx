@@ -7,6 +7,8 @@ import { ProjectHealthBar } from "@/components/ProjectHealthBar";
 import { ImportStructure } from "@/components/ImportStructure";
 import { AssetTable } from "@/components/AssetTable";
 import { ProjectSelector } from "@/components/ProjectSelector";
+import { ProjectStats } from "@/components/ProjectStats";
+import { BulkStatusUpdate } from "@/components/BulkStatusUpdate";
 import { Terminal, LogOut, Plus, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -225,6 +227,63 @@ const Dashboard = () => {
     }
   };
 
+  const handleDeleteAsset = async (assetId: string) => {
+    const { error } = await supabase
+      .from("assets")
+      .delete()
+      .eq("id", assetId);
+
+    if (error) {
+      toast({
+        title: "Delete Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setAssets(assets.filter((asset) => asset.id !== assetId));
+      toast({
+        title: "Asset Deleted",
+        description: "The asset has been removed from tracking.",
+      });
+    }
+  };
+
+  const handleBulkStatusUpdate = async (
+    assetIds: string[],
+    newStatus: "pending" | "received" | "implemented"
+  ) => {
+    const updates: Partial<Asset> = { status: newStatus };
+
+    if (newStatus === "received") {
+      updates.received_at = new Date().toISOString();
+    } else if (newStatus === "implemented") {
+      updates.implemented_at = new Date().toISOString();
+    }
+
+    const { error } = await supabase
+      .from("assets")
+      .update(updates)
+      .in("id", assetIds);
+
+    if (error) {
+      toast({
+        title: "Bulk Update Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setAssets(
+        assets.map((asset) =>
+          assetIds.includes(asset.id) ? { ...asset, ...updates } : asset
+        )
+      );
+      toast({
+        title: "Bulk Update Complete",
+        description: `${assetIds.length} assets updated to ${newStatus.toUpperCase()}.`,
+      });
+    }
+  };
+
   const implementedCount = assets.filter((a) => a.status === "implemented").length;
   const healthPercentage = assets.length > 0 ? (implementedCount / assets.length) * 100 : 0;
   const isHighRisk = healthPercentage < 50 && assets.length > 0;
@@ -321,10 +380,22 @@ const Dashboard = () => {
             </Dialog>
           </div>
 
-          {selectedProject && (
-            <ImportStructure onImport={handleImportAssets} />
-          )}
+          <div className="flex items-center gap-3">
+            {selectedProject && assets.length > 0 && (
+              <BulkStatusUpdate assets={assets} onBulkUpdate={handleBulkStatusUpdate} />
+            )}
+            {selectedProject && (
+              <ImportStructure onImport={handleImportAssets} />
+            )}
+          </div>
         </div>
+
+        {/* Project Stats */}
+        {selectedProject && assets.length > 0 && (
+          <div className="mb-6">
+            <ProjectStats assets={assets} />
+          </div>
+        )}
 
         {/* Project Health */}
         {selectedProject && (
@@ -343,6 +414,7 @@ const Dashboard = () => {
               assets={assets}
               onStatusUpdate={handleStatusUpdate}
               onAssigneeUpdate={handleAssigneeUpdate}
+              onDeleteAsset={handleDeleteAsset}
             />
           </div>
         ) : (
