@@ -1,0 +1,364 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { User } from "@supabase/supabase-js";
+import { useToast } from "@/hooks/use-toast";
+import { ProjectHealthBar } from "@/components/ProjectHealthBar";
+import { ImportStructure } from "@/components/ImportStructure";
+import { AssetTable } from "@/components/AssetTable";
+import { ProjectSelector } from "@/components/ProjectSelector";
+import { Terminal, LogOut, Plus, Folder } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+interface Asset {
+  id: string;
+  project_id: string;
+  name: string;
+  file_path: string;
+  status: "pending" | "received" | "implemented";
+  assigned_to: string | null;
+  received_at: string | null;
+  implemented_at: string | null;
+  created_at: string;
+}
+
+const Dashboard = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        navigate("/auth");
+      }
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        navigate("/auth");
+      } else {
+        fetchProjects();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const fetchProjects = async () => {
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast({
+        title: "Error fetching projects",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setProjects(data || []);
+      if (data && data.length > 0 && !selectedProject) {
+        setSelectedProject(data[0]);
+      }
+    }
+    setLoading(false);
+  };
+
+  const fetchAssets = async (projectId: string) => {
+    const { data, error } = await supabase
+      .from("assets")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("file_path", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Error fetching assets",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setAssets(data as Asset[] || []);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedProject) {
+      fetchAssets(selectedProject.id);
+    }
+  }, [selectedProject]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
+
+  const createProject = async () => {
+    if (!newProjectName.trim() || !user) return;
+
+    const { data, error } = await supabase
+      .from("projects")
+      .insert({ name: newProjectName.trim(), user_id: user.id })
+      .select()
+      .single();
+
+    if (error) {
+      toast({
+        title: "Error creating project",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Project Created",
+        description: `${newProjectName} has been initialized.`,
+      });
+      setProjects([data, ...projects]);
+      setSelectedProject(data);
+      setNewProjectName("");
+      setCreateDialogOpen(false);
+    }
+  };
+
+  const handleImportAssets = async (filePaths: string[]) => {
+    if (!selectedProject || !user) return;
+
+    const newAssets = filePaths.map((path) => ({
+      project_id: selectedProject.id,
+      name: path.split("/").pop() || path,
+      file_path: path,
+      status: "pending" as const,
+    }));
+
+    const { error } = await supabase.from("assets").insert(newAssets);
+
+    if (error) {
+      toast({
+        title: "Import Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Import Complete",
+        description: `${filePaths.length} assets have been imported.`,
+      });
+      fetchAssets(selectedProject.id);
+    }
+  };
+
+  const handleStatusUpdate = async (
+    assetId: string,
+    newStatus: "pending" | "received" | "implemented"
+  ) => {
+    const updates: Partial<Asset> = { status: newStatus };
+
+    if (newStatus === "received") {
+      updates.received_at = new Date().toISOString();
+    } else if (newStatus === "implemented") {
+      updates.implemented_at = new Date().toISOString();
+    }
+
+    const { error } = await supabase
+      .from("assets")
+      .update(updates)
+      .eq("id", assetId);
+
+    if (error) {
+      toast({
+        title: "Update Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setAssets(
+        assets.map((asset) =>
+          asset.id === assetId ? { ...asset, ...updates } : asset
+        )
+      );
+    }
+  };
+
+  const handleAssigneeUpdate = async (assetId: string, assignedTo: string) => {
+    const { error } = await supabase
+      .from("assets")
+      .update({ assigned_to: assignedTo || null })
+      .eq("id", assetId);
+
+    if (error) {
+      toast({
+        title: "Update Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setAssets(
+        assets.map((asset) =>
+          asset.id === assetId ? { ...asset, assigned_to: assignedTo || null } : asset
+        )
+      );
+    }
+  };
+
+  const implementedCount = assets.filter((a) => a.status === "implemented").length;
+  const healthPercentage = assets.length > 0 ? (implementedCount / assets.length) * 100 : 0;
+  const isHighRisk = healthPercentage < 50 && assets.length > 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-primary animate-pulse font-display tracking-widest">
+          LOADING SYSTEMS...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background grid-pattern relative">
+      <div className="absolute inset-0 scanlines pointer-events-none" />
+      
+      {/* Top Bar */}
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <Terminal className="w-8 h-8 text-primary" />
+              <h1 className="text-2xl font-display font-bold text-primary text-glow-primary tracking-widest">
+                TRACE
+              </h1>
+            </div>
+
+            {/* User info and logout */}
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground text-sm font-mono hidden sm:block">
+                {user?.email}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSignOut}
+                className="border-border hover:border-destructive hover:text-destructive transition-colors"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                LOGOUT
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        {/* Project Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <ProjectSelector
+              projects={projects}
+              selectedProject={selectedProject}
+              onSelect={setSelectedProject}
+            />
+            
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  NEW PROJECT
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-border">
+                <DialogHeader>
+                  <DialogTitle className="font-display tracking-wider text-foreground">
+                    Initialize New Project
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <Input
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder="Project codename..."
+                    className="bg-input border-border"
+                    onKeyDown={(e) => e.key === "Enter" && createProject()}
+                  />
+                  <Button
+                    onClick={createProject}
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    CREATE PROJECT
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {selectedProject && (
+            <ImportStructure onImport={handleImportAssets} />
+          )}
+        </div>
+
+        {/* Project Health */}
+        {selectedProject && (
+          <ProjectHealthBar
+            percentage={healthPercentage}
+            isHighRisk={isHighRisk}
+            totalAssets={assets.length}
+            implementedAssets={implementedCount}
+          />
+        )}
+
+        {/* Asset Table */}
+        {selectedProject ? (
+          <div className="mt-6">
+            <AssetTable
+              assets={assets}
+              onStatusUpdate={handleStatusUpdate}
+              onAssigneeUpdate={handleAssigneeUpdate}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Folder className="w-16 h-16 text-muted-foreground/30 mb-4" />
+            <h2 className="text-xl font-display text-muted-foreground mb-2">
+              NO PROJECT SELECTED
+            </h2>
+            <p className="text-muted-foreground/60 text-sm">
+              Create a new project or select an existing one to begin tracking assets.
+            </p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default Dashboard;
