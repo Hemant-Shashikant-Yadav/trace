@@ -111,16 +111,6 @@ export const AssetRow = React.memo(
     // - Owner (isOwner = true): Can assign tasks to ANY team member
     // - Member (isOwner = false): Can ONLY assign to themselves (claim) or unassign (release)
     
-    // Debug logging for RBAC (can be removed after testing)
-    console.log('[AssetRow RBAC Debug]', {
-      assetName: asset.name,
-      projectOwnerId: projectOwnerId || 'MISSING',
-      currentUserId: currentUserId || 'MISSING',
-      isOwner,
-      membersCount: members.length,
-      check: `${currentUserId} === ${projectOwnerId} = ${isOwner}`,
-    });
-    
     // Get current user's email for self-assignment
     const currentUserMember = members.find(m => m.user_id === currentUserId);
     
@@ -131,27 +121,20 @@ export const AssetRow = React.memo(
       ? members 
       : members.filter(m => m.user_id === currentUserId);
     
-    console.log('[AssetRow RBAC Filtered]', {
-      totalMembers: members.length,
-      visibleMembers: visibleMembers.length,
-      visibleMembersEmails: visibleMembers.map(m => m.email),
-    });
-    
     // Anti-Steal Logic: Check if non-owner can interact with this assignment
     // Non-owners can only interact if: (1) Unassigned OR (2) Assigned to them
     const isAssignedToMe = asset.assigned_to === currentUserMember?.email;
     const isUnassigned = !asset.assigned_to;
     const canInteractWithAssignment = isOwner || isUnassigned || isAssignedToMe;
 
-    const handleAssigneeSelect = (email: string) => {
+    const handleAssigneeSelect = async (email: string) => {
       // Security check: Non-owners can only assign to themselves or unassign
       if (!isOwner && email !== "" && email !== currentUserMember?.email) {
-        // Block unauthorized assignment
-        console.warn("Non-owners can only assign tasks to themselves");
         return;
       }
       
-      onAssigneeUpdate(asset.id, email);
+      // Call parent update handler
+      await onAssigneeUpdate(asset.id, email);
     };
 
     const handleUnassign = () => {

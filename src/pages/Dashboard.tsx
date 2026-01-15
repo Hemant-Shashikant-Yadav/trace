@@ -266,7 +266,7 @@ const Dashboard = () => {
     assetId: string,
     newStatus: "pending" | "received" | "implemented"
   ) => {
-    // Find the current asset to check for backward transitions
+    // Use functional state to get current asset
     const currentAsset = assets.find((a) => a.id === assetId);
     if (!currentAsset) return;
 
@@ -301,7 +301,9 @@ const Dashboard = () => {
       });
     } else {
       // Refetch to get the latest data including any trigger updates
-      fetchAssets(selectedProject!.id);
+      if (selectedProject) {
+        await fetchAssets(selectedProject.id);
+      }
     }
   };
 
@@ -318,11 +320,21 @@ const Dashboard = () => {
         variant: "destructive",
       });
     } else {
-      setAssets(
-        assets.map((asset) =>
-          asset.id === assetId ? { ...asset, assigned_to: assignedTo || null } : asset
+      // Use functional setState to ensure we're working with latest state
+      setAssets((prevAssets) =>
+        prevAssets.map((asset) =>
+          asset.id === assetId 
+            ? { ...asset, assigned_to: assignedTo || null, updated_at: new Date().toISOString() } 
+            : asset
         )
       );
+      
+      toast({
+        title: "Assignment Updated",
+        description: assignedTo 
+          ? `Task assigned to ${assignedTo}` 
+          : "Task unassigned",
+      });
     }
   };
 
@@ -339,7 +351,9 @@ const Dashboard = () => {
         variant: "destructive",
       });
     } else {
-      setAssets(assets.filter((asset) => asset.id !== assetId));
+      // Use functional setState to ensure we're working with latest state
+      setAssets((prevAssets) => prevAssets.filter((asset) => asset.id !== assetId));
+      
       toast({
         title: "Asset Deleted",
         description: "The asset has been removed from tracking.",

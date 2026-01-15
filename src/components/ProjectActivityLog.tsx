@@ -31,8 +31,6 @@ export const ProjectActivityLog = ({ projectId }: ProjectActivityLogProps) => {
   const { data: logs = [], isLoading, error } = useQuery({
     queryKey: ["project-activity-log", projectId],
     queryFn: async () => {
-      console.log("[ProjectActivityLog] Fetching logs for project:", projectId);
-
       // Fetch asset_history for all assets in this project
       const { data: assets, error: assetsError } = await supabase
         .from("assets")
@@ -40,19 +38,16 @@ export const ProjectActivityLog = ({ projectId }: ProjectActivityLogProps) => {
         .eq("project_id", projectId);
 
       if (assetsError) {
-        console.error("[ProjectActivityLog] Error fetching assets:", assetsError);
+        console.error("Error fetching assets for activity log:", assetsError);
         throw assetsError;
       }
 
       if (!assets || assets.length === 0) {
-        console.log("[ProjectActivityLog] No assets found in project");
         return [];
       }
 
       const assetIds = assets.map(a => a.id);
       const assetNameMap = new Map(assets.map(a => [a.id, a.name]));
-
-      console.log("[ProjectActivityLog] Fetching history for", assetIds.length, "assets");
 
       // Fetch history for all assets in this project
       const { data: history, error: historyError } = await supabase
@@ -63,11 +58,9 @@ export const ProjectActivityLog = ({ projectId }: ProjectActivityLogProps) => {
         .limit(100); // Limit to last 100 entries
 
       if (historyError) {
-        console.error("[ProjectActivityLog] Error fetching history:", historyError);
+        console.error("Error fetching history:", historyError);
         throw historyError;
       }
-
-      console.log("[ProjectActivityLog] Found", history?.length || 0, "history entries");
 
       // Enrich history with asset names and user details
       const enrichedLogs: ActivityLogEntry[] = [];
@@ -93,7 +86,6 @@ export const ProjectActivityLog = ({ projectId }: ProjectActivityLogProps) => {
         });
       }
 
-      console.log("[ProjectActivityLog] Enriched", enrichedLogs.length, "log entries");
       return enrichedLogs;
     },
     enabled: !!projectId,
