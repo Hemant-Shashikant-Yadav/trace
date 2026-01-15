@@ -11,6 +11,8 @@ import { ProjectStats } from "@/components/ProjectStats";
 import { BulkStatusUpdate } from "@/components/BulkStatusUpdate";
 import { UserProfileModal } from "@/components/UserProfileModal";
 import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
+import { ProjectActivityLog } from "@/components/ProjectActivityLog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Terminal, LogOut, Plus, Folder, UserCircle, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -538,18 +540,87 @@ const Dashboard = () => {
           />
         )}
 
-        {/* Asset Table */}
+        {/* Main Content Tabs */}
         {selectedProject && user ? (
           <div className="mt-6">
-            <AssetTable
-              assets={assets}
-              projectId={selectedProject.id}
-              projectOwnerId={selectedProject.user_id}
-              currentUserId={user.id}
-              onStatusUpdate={handleStatusUpdate}
-              onAssigneeUpdate={handleAssigneeUpdate}
-              onDeleteAsset={handleDeleteAsset}
-            />
+            <Tabs defaultValue="assets" className="w-full">
+              <TabsList className="grid w-full max-w-md grid-cols-3 bg-secondary">
+                <TabsTrigger 
+                  value="assets" 
+                  className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  ASSETS
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="overview" 
+                  className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  OVERVIEW
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="logs" 
+                  className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  LOGS
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Assets Tab */}
+              <TabsContent value="assets" className="mt-6">
+                <AssetTable
+                  assets={assets}
+                  projectId={selectedProject.id}
+                  projectOwnerId={selectedProject.user_id}
+                  currentUserId={user.id}
+                  onStatusUpdate={handleStatusUpdate}
+                  onAssigneeUpdate={handleAssigneeUpdate}
+                  onDeleteAsset={handleDeleteAsset}
+                />
+              </TabsContent>
+
+              {/* Overview Tab */}
+              <TabsContent value="overview" className="mt-6">
+                <div className="space-y-6">
+                  <div className="command-border bg-card/50 rounded-sm p-6">
+                    <h3 className="font-display text-lg tracking-wider text-foreground mb-4">
+                      PROJECT OVERVIEW
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground font-display tracking-wider">
+                          TOTAL ASSETS
+                        </div>
+                        <div className="text-3xl font-display text-primary">
+                          {assets.length}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground font-display tracking-wider">
+                          COMPLETION RATE
+                        </div>
+                        <div className="text-3xl font-display text-success">
+                          {healthPercentage.toFixed(0)}%
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground font-display tracking-wider">
+                          STATUS
+                        </div>
+                        <div className={`text-3xl font-display ${isHighRisk ? 'text-destructive' : 'text-success'}`}>
+                          {isHighRisk ? 'AT RISK' : 'ON TRACK'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {assets.length > 0 && <ProjectStats assets={assets} />}
+                </div>
+              </TabsContent>
+
+              {/* Logs Tab */}
+              <TabsContent value="logs" className="mt-6">
+                <ProjectActivityLog projectId={selectedProject.id} />
+              </TabsContent>
+            </Tabs>
           </div>
         ) : selectedProject ? (
           <div className="flex items-center justify-center py-10">

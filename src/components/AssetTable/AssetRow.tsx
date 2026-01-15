@@ -136,6 +136,12 @@ export const AssetRow = React.memo(
       visibleMembers: visibleMembers.length,
       visibleMembersEmails: visibleMembers.map(m => m.email),
     });
+    
+    // Anti-Steal Logic: Check if non-owner can interact with this assignment
+    // Non-owners can only interact if: (1) Unassigned OR (2) Assigned to them
+    const isAssignedToMe = asset.assigned_to === currentUserMember?.email;
+    const isUnassigned = !asset.assigned_to;
+    const canInteractWithAssignment = isOwner || isUnassigned || isAssignedToMe;
 
     const handleAssigneeSelect = (email: string) => {
       // Security check: Non-owners can only assign to themselves or unassign
@@ -269,43 +275,102 @@ export const AssetRow = React.memo(
           </DropdownMenu>
         </TableCell>
         <TableCell>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-                title={isOwner ? "Owner: Can assign to anyone" : "Member: Can only claim or release"}
-              >
-                <User className="w-3 h-3" />
-                {asset.assigned_to || "Unassigned"}
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-card border-border">
-              <DropdownMenuItem onClick={handleUnassign} className="text-muted-foreground">
-                <UserPlus className="w-3 h-3 mr-2" />
-                Unassigned
-              </DropdownMenuItem>
-              {visibleMembers.length > 0 && <DropdownMenuSeparator />}
-              {visibleMembers.map((member) => (
-                <DropdownMenuItem
-                  key={member.user_id}
-                  onClick={() => handleAssigneeSelect(member.email)}
-                  className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+          {(() => {
+            // ===== TASK 2: STRICT ASSIGNMENT UI (ANTI-STEAL LOGIC) =====
+            
+            // Owner: Always show full dropdown
+            if (isOwner) {
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                      title="Owner: Can assign to anyone"
+                    >
+                      <User className="w-3 h-3" />
+                      {asset.assigned_to || "Unassigned"}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-card border-border">
+                    <DropdownMenuItem onClick={handleUnassign} className="text-muted-foreground">
+                      <UserPlus className="w-3 h-3 mr-2" />
+                      Unassigned
+                    </DropdownMenuItem>
+                    {visibleMembers.length > 0 && <DropdownMenuSeparator />}
+                    {visibleMembers.map((member) => (
+                      <DropdownMenuItem
+                        key={member.user_id}
+                        onClick={() => handleAssigneeSelect(member.email)}
+                        className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+                      >
+                        <User className="w-3 h-3 mr-2" />
+                        {member.nickname || member.email}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+            
+            // Non-Owner: Check asset assignment status
+            const isAssignedToMe = asset.assigned_to === currentUserMember?.email;
+            const isUnassigned = !asset.assigned_to;
+            const isAssignedToOther = asset.assigned_to && !isAssignedToMe;
+            
+            // Case 1 & 2: Unassigned OR Assigned to Me → Show dropdown (Me, Unassigned)
+            if (isUnassigned || isAssignedToMe) {
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                      title="You can claim this task or release it"
+                    >
+                      <User className="w-3 h-3" />
+                      {asset.assigned_to || "Unassigned"}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-card border-border">
+                    <DropdownMenuItem onClick={handleUnassign} className="text-muted-foreground">
+                      <UserPlus className="w-3 h-3 mr-2" />
+                      Unassigned
+                    </DropdownMenuItem>
+                    {visibleMembers.length > 0 && <DropdownMenuSeparator />}
+                    {visibleMembers.map((member) => (
+                      <DropdownMenuItem
+                        key={member.user_id}
+                        onClick={() => handleAssigneeSelect(member.email)}
+                        className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+                      >
+                        <User className="w-3 h-3 mr-2" />
+                        Me ({member.nickname || member.email})
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+            
+            // Case 3: Assigned to Other → Static span (NO interaction)
+            if (isAssignedToOther) {
+              const assignedMember = members.find(m => m.email === asset.assigned_to);
+              return (
+                <span 
+                  className="text-sm text-muted-foreground flex items-center gap-1"
+                  title="Assigned to another team member. Contact project owner to reassign."
                 >
-                  <User className="w-3 h-3 mr-2" />
-                  {member.nickname || member.email}
-                  {!isOwner && member.user_id === currentUserId && (
-                    <span className="ml-2 text-xs text-muted-foreground">(You)</span>
-                  )}
-                </DropdownMenuItem>
-              ))}
-              {!isOwner && visibleMembers.length === 0 && (
-                <DropdownMenuItem disabled className="text-muted-foreground text-xs">
-                  No options available
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <User className="w-3 h-3" />
+                  {assignedMember?.nickname || asset.assigned_to}
+                  <span className="text-xs text-orange-500 ml-1">(Locked)</span>
+                </span>
+              );
+            }
+            
+            // Fallback (should never reach here)
+            return <span className="text-sm text-muted-foreground">—</span>;
+          })()}
         </TableCell>
         <TableCell>
           {editingNotes ? (
