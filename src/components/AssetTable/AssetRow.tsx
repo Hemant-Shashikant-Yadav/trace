@@ -35,6 +35,8 @@ import { useQueryClient } from "@tanstack/react-query";
 interface AssetRowProps {
   asset: Asset;
   projectId: string;
+  projectOwnerId: string;
+  currentUserId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
@@ -91,7 +93,7 @@ const StatusBadge = ({
 };
 
 export const AssetRow = React.memo(
-  ({ asset, projectId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: AssetRowProps) => {
+  ({ asset, projectId, projectOwnerId, currentUserId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: AssetRowProps) => {
     const [editingNotes, setEditingNotes] = useState(false);
     const [notesValue, setNotesValue] = useState("");
     const [reworkModalOpen, setReworkModalOpen] = useState(false);
@@ -101,8 +103,21 @@ export const AssetRow = React.memo(
     
     // Fetch project members for assignee dropdown
     const { data: members = [] } = useProjectMembersSimple(projectId);
+    
+    // Check if current user is the project owner
+    const isOwner = currentUserId === projectOwnerId;
+    
+    // Get current user's email for self-assignment
+    const currentUserMember = members.find(m => m.user_id === currentUserId);
 
     const handleAssigneeSelect = (email: string) => {
+      // Security check: Non-owners can only assign to themselves or unassign
+      if (!isOwner && email !== "" && email !== currentUserMember?.email) {
+        // Block unauthorized assignment
+        console.warn("Non-owners can only assign tasks to themselves");
+        return;
+      }
+      
       onAssigneeUpdate(asset.id, email);
     };
 
@@ -241,16 +256,26 @@ export const AssetRow = React.memo(
                 Unassigned
               </DropdownMenuItem>
               {members.length > 0 && <DropdownMenuSeparator />}
-              {members.map((member) => (
-                <DropdownMenuItem
-                  key={member.user_id}
-                  onClick={() => handleAssigneeSelect(member.email)}
-                  className={asset.assigned_to === member.email ? "bg-secondary" : ""}
-                >
-                  <User className="w-3 h-3 mr-2" />
-                  {member.nickname || member.email}
-                </DropdownMenuItem>
-              ))}
+              {members
+                .filter((member) => {
+                  // Owners can see all members
+                  if (isOwner) return true;
+                  // Non-owners can only see themselves
+                  return member.user_id === currentUserId;
+                })
+                .map((member) => (
+                  <DropdownMenuItem
+                    key={member.user_id}
+                    onClick={() => handleAssigneeSelect(member.email)}
+                    className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+                  >
+                    <User className="w-3 h-3 mr-2" />
+                    {member.nickname || member.email}
+                    {!isOwner && member.user_id === currentUserId && (
+                      <span className="ml-2 text-xs text-muted-foreground">(You)</span>
+                    )}
+                  </DropdownMenuItem>
+                ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>
@@ -354,7 +379,9 @@ export const AssetRow = React.memo(
       prevProps.asset.revision_count === nextProps.asset.revision_count &&
       prevProps.asset.assigned_to === nextProps.asset.assigned_to &&
       prevProps.asset.notes === nextProps.asset.notes &&
-      prevProps.projectId === nextProps.projectId
+      prevProps.projectId === nextProps.projectId &&
+      prevProps.projectOwnerId === nextProps.projectOwnerId &&
+      prevProps.currentUserId === nextProps.currentUserId
     );
   }
 );

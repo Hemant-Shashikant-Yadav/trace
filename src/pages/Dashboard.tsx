@@ -544,6 +544,8 @@ const Dashboard = () => {
             <AssetTable
               assets={assets}
               projectId={selectedProject.id}
+              projectOwnerId={selectedProject.user_id}
+              currentUserId={user?.id || ""}
               onStatusUpdate={handleStatusUpdate}
               onAssigneeUpdate={handleAssigneeUpdate}
               onDeleteAsset={handleDeleteAsset}

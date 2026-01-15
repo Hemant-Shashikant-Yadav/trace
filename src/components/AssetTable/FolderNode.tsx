@@ -15,13 +15,15 @@ interface FolderNodeProps {
   node: TreeNode;
   depth: number;
   projectId: string;
+  projectOwnerId: string;
+  currentUserId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
 }
 
 export const FolderNode = React.memo(
-  ({ node, depth, projectId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: FolderNodeProps) => {
+  ({ node, depth, projectId, projectOwnerId, currentUserId, onStatusUpdate, onAssigneeUpdate, onDeleteAsset }: FolderNodeProps) => {
     const [isExpanded, setIsExpanded] = useState(true);
 
     // If this is an asset node, render the AssetRow
@@ -30,6 +32,8 @@ export const FolderNode = React.memo(
         <AssetRow
           asset={node.asset}
           projectId={projectId}
+          projectOwnerId={projectOwnerId}
+          currentUserId={currentUserId}
           onStatusUpdate={onStatusUpdate}
           onAssigneeUpdate={onAssigneeUpdate}
           onDeleteAsset={onDeleteAsset}
@@ -99,6 +103,8 @@ export const FolderNode = React.memo(
                       node={childNode}
                       depth={depth + 1}
                       projectId={projectId}
+                      projectOwnerId={projectOwnerId}
+                      currentUserId={currentUserId}
                       onStatusUpdate={onStatusUpdate}
                       onAssigneeUpdate={onAssigneeUpdate}
                       onDeleteAsset={onDeleteAsset}
@@ -141,6 +147,8 @@ export const FolderNode = React.memo(
                               node={assetNode}
                               depth={depth + 1}
                               projectId={projectId}
+                              projectOwnerId={projectOwnerId}
+                              currentUserId={currentUserId}
                               onStatusUpdate={onStatusUpdate}
                               onAssigneeUpdate={onAssigneeUpdate}
                               onDeleteAsset={onDeleteAsset}
@@ -165,7 +173,9 @@ export const FolderNode = React.memo(
     return (
       prevProps.node === nextProps.node &&
       prevProps.depth === nextProps.depth &&
-      prevProps.projectId === nextProps.projectId
+      prevProps.projectId === nextProps.projectId &&
+      prevProps.projectOwnerId === nextProps.projectOwnerId &&
+      prevProps.currentUserId === nextProps.currentUserId
     );
   }
 );

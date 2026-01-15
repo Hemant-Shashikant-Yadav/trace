@@ -17,6 +17,8 @@ import { FolderNode } from "./AssetTable/FolderNode";
 interface AssetTableProps {
   assets: Asset[];
   projectId: string;
+  projectOwnerId: string;
+  currentUserId: string;
   onStatusUpdate: (assetId: string, status: "pending" | "received" | "implemented") => void;
   onAssigneeUpdate: (assetId: string, assignedTo: string) => void;
   onDeleteAsset: (assetId: string) => void;
@@ -25,6 +27,8 @@ interface AssetTableProps {
 export const AssetTable = ({
   assets,
   projectId,
+  projectOwnerId,
+  currentUserId,
   onStatusUpdate,
   onAssigneeUpdate,
   onDeleteAsset,
@@ -221,6 +225,8 @@ export const AssetTable = ({
                 node={node}
                 depth={0}
                 projectId={projectId}
+                projectOwnerId={projectOwnerId}
+                currentUserId={currentUserId}
                 onStatusUpdate={handleStatusUpdate}
                 onAssigneeUpdate={handleAssigneeUpdate}
                 onDeleteAsset={handleDeleteAsset}
