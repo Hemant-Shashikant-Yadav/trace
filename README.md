@@ -1,73 +1,126 @@
-# Welcome to your Lovable project
+# Trace
 
-## Project info
+**Asset Tracking & Project Management System**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Trace is a powerful, team-oriented asset tracking and project management platform built with modern web technologies. Track assets through their lifecycle, manage team assignments, monitor project health, and maintain comprehensive audit logs.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- 📦 **Asset Management**: Import assets from ZIP files, organize by folders, track status (Pending → Received → Implemented)
+- 👥 **Team Collaboration**: Role-based access control, assign tasks to team members, track assignments
+- 📊 **Project Health Monitoring**: Real-time project statistics, health percentage, high-risk alerts
+- 📝 **Activity Logs**: Complete audit trail of all status changes with user attribution
+- 🔄 **Revision Tracking**: Automatic revision counting for rework cycles
+- 💬 **Notes & Comments**: Add notes to assets, forced comments for rework scenarios
+- 🎯 **Smart Filtering**: Filter by "My Tasks", "High Churn" assets, search by name/path
+- 📁 **Folder Organization**: Hierarchical folder structure with collapsible tree view
 
-**Use Lovable**
+## Tech Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- **Frontend**: React 18 + TypeScript
+- **Build Tool**: Vite
+- **UI Framework**: shadcn/ui + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth)
+- **State Management**: TanStack Query (React Query)
+- **Routing**: React Router v6
 
-Changes made via Lovable will be committed automatically to this repo.
+## Getting Started
 
-**Use your preferred IDE**
+### Prerequisites
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- Node.js 18+ and npm
+- Supabase account and project
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Installation
 
-Follow these steps:
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd trace
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# Install dependencies
+npm install
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Set up environment variables
+# Create .env file with your Supabase credentials:
+# VITE_SUPABASE_URL=your_supabase_url
+# VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Run development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Database Setup
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+1. Create a Supabase project
+2. Run the migration files from `supabase/migrations/` in order
+3. Ensure RLS policies are configured correctly
+4. Set up the `profiles` table with `nickname` column
 
-**Use GitHub Codespaces**
+## Project Structure
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```
+trace/
+├── src/
+│   ├── components/        # React components
+│   │   ├── AssetTable/   # Asset table components
+│   │   └── ui/           # shadcn/ui components
+│   ├── hooks/            # Custom React hooks
+│   ├── integrations/     # Supabase client & types
+│   ├── pages/            # Page components
+│   └── lib/              # Utility functions
+├── supabase/
+│   └── migrations/      # Database migrations
+└── public/               # Static assets
+```
 
-## What technologies are used for this project?
+## Deployment
 
-This project is built with:
+### Build for Production
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```bash
+npm run build
+```
 
-## How can I deploy this project?
+The `dist/` folder will contain the production-ready files.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+### Deploy to Vercel/Netlify
 
-## Can I connect a custom domain to my Lovable project?
+1. Connect your repository
+2. Set environment variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+3. Deploy!
 
-Yes, you can!
+### Environment Variables
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Required environment variables:
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- `VITE_SUPABASE_URL`: Your Supabase project URL
+- `VITE_SUPABASE_ANON_KEY`: Your Supabase anonymous key
+
+## Usage
+
+1. **Create a Project**: Click "NEW PROJECT" and enter a project name
+2. **Invite Team Members**: Add member emails during project creation or via Project Settings
+3. **Import Assets**: Use "Import Structure" to upload a ZIP file with your asset files
+4. **Track Progress**: Update asset status, assign to team members, add notes
+5. **Monitor Health**: View project statistics and health percentage
+6. **Review Activity**: Check the Logs tab for complete activity history
+
+## Role-Based Access
+
+- **Project Owner**: Full control - can assign tasks to anyone, manage team members, delete project
+- **Team Member**: Can only claim tasks (assign to self) or release them (unassign)
+
+## License
+
+[Your License Here]
+
+## Support
+
+For issues, questions, or contributions, please open an issue on GitHub.
+
+---
+
+Built with ❤️ using modern web technologies

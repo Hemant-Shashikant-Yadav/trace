@@ -1,7 +1,9 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "trace",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Trace - Asset Tracking & Project Management System",
+  "author": "Yash UG Shejwal",
   "type": "module",
   "scripts": {
     "dev": "vite",
