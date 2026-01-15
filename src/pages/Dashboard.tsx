@@ -539,17 +539,21 @@ const Dashboard = () => {
         )}
 
         {/* Asset Table */}
-        {selectedProject ? (
+        {selectedProject && user ? (
           <div className="mt-6">
             <AssetTable
               assets={assets}
               projectId={selectedProject.id}
               projectOwnerId={selectedProject.user_id}
-              currentUserId={user?.id || ""}
+              currentUserId={user.id}
               onStatusUpdate={handleStatusUpdate}
               onAssigneeUpdate={handleAssigneeUpdate}
               onDeleteAsset={handleDeleteAsset}
             />
+          </div>
+        ) : selectedProject ? (
+          <div className="flex items-center justify-center py-10">
+            <div className="text-muted-foreground">Loading user data...</div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-center">

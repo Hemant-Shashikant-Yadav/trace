@@ -101,14 +101,41 @@ export const AssetRow = React.memo(
     
     const queryClient = useQueryClient();
     
+    // ========== ROLE-BASED ASSIGNMENT CONTROL (RBAC) ==========
     // Fetch project members for assignee dropdown
     const { data: members = [] } = useProjectMembersSimple(projectId);
     
     // Check if current user is the project owner
     const isOwner = currentUserId === projectOwnerId;
+    // RBAC Rules:
+    // - Owner (isOwner = true): Can assign tasks to ANY team member
+    // - Member (isOwner = false): Can ONLY assign to themselves (claim) or unassign (release)
+    
+    // Debug logging for RBAC (can be removed after testing)
+    console.log('[AssetRow RBAC Debug]', {
+      assetName: asset.name,
+      projectOwnerId: projectOwnerId || 'MISSING',
+      currentUserId: currentUserId || 'MISSING',
+      isOwner,
+      membersCount: members.length,
+      check: `${currentUserId} === ${projectOwnerId} = ${isOwner}`,
+    });
     
     // Get current user's email for self-assignment
     const currentUserMember = members.find(m => m.user_id === currentUserId);
+    
+    // Filter visible members based on role
+    // Owner: Can see all members
+    // Member: Can only see themselves (for self-assignment)
+    const visibleMembers = isOwner 
+      ? members 
+      : members.filter(m => m.user_id === currentUserId);
+    
+    console.log('[AssetRow RBAC Filtered]', {
+      totalMembers: members.length,
+      visibleMembers: visibleMembers.length,
+      visibleMembersEmails: visibleMembers.map(m => m.email),
+    });
 
     const handleAssigneeSelect = (email: string) => {
       // Security check: Non-owners can only assign to themselves or unassign
@@ -244,7 +271,10 @@ export const AssetRow = React.memo(
         <TableCell>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              <button 
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                title={isOwner ? "Owner: Can assign to anyone" : "Member: Can only claim or release"}
+              >
                 <User className="w-3 h-3" />
                 {asset.assigned_to || "Unassigned"}
                 <ChevronDown className="w-3 h-3" />
@@ -255,27 +285,25 @@ export const AssetRow = React.memo(
                 <UserPlus className="w-3 h-3 mr-2" />
                 Unassigned
               </DropdownMenuItem>
-              {members.length > 0 && <DropdownMenuSeparator />}
-              {members
-                .filter((member) => {
-                  // Owners can see all members
-                  if (isOwner) return true;
-                  // Non-owners can only see themselves
-                  return member.user_id === currentUserId;
-                })
-                .map((member) => (
-                  <DropdownMenuItem
-                    key={member.user_id}
-                    onClick={() => handleAssigneeSelect(member.email)}
-                    className={asset.assigned_to === member.email ? "bg-secondary" : ""}
-                  >
-                    <User className="w-3 h-3 mr-2" />
-                    {member.nickname || member.email}
-                    {!isOwner && member.user_id === currentUserId && (
-                      <span className="ml-2 text-xs text-muted-foreground">(You)</span>
-                    )}
-                  </DropdownMenuItem>
-                ))}
+              {visibleMembers.length > 0 && <DropdownMenuSeparator />}
+              {visibleMembers.map((member) => (
+                <DropdownMenuItem
+                  key={member.user_id}
+                  onClick={() => handleAssigneeSelect(member.email)}
+                  className={asset.assigned_to === member.email ? "bg-secondary" : ""}
+                >
+                  <User className="w-3 h-3 mr-2" />
+                  {member.nickname || member.email}
+                  {!isOwner && member.user_id === currentUserId && (
+                    <span className="ml-2 text-xs text-muted-foreground">(You)</span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+              {!isOwner && visibleMembers.length === 0 && (
+                <DropdownMenuItem disabled className="text-muted-foreground text-xs">
+                  No options available
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>
