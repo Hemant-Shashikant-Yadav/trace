@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { friendlyError } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProjectSettingsModalProps {
   isOpen: boolean;
@@ -43,6 +44,12 @@ interface ProjectMemberWithProfile {
   nickname: string | null;
 }
 
+interface ProfileOption {
+  id: string;
+  email: string | null;
+  nickname: string | null;
+}
+
 export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -52,7 +59,8 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   currentUserId,
   onProjectDeleted,
 }) => {
-  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [userSearch, setUserSearch] = useState("");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -92,66 +100,44 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     enabled: isOpen,
   });
 
-  const handleAddMember = async () => {
-    if (!newMemberEmail.trim()) {
+  // Fetch all users (sorted by email) for selection list
+  const { data: allUsers = [], isLoading: loadingAllUsers } = useQuery<ProfileOption[]>({
+    queryKey: ["all-users-profiles"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, nickname")
+        .order("email", { ascending: true });
+
+      if (error) throw error;
+      return data as ProfileOption[];
+    },
+    enabled: isOpen,
+  });
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleAddSelectedMembers = async () => {
+    if (selectedUsers.length === 0) {
       toast({
-        title: "Invalid Email",
-        description: "Please enter an email address",
+        title: "No Users Selected",
+        description: "Pick at least one user to add to the project.",
         variant: "destructive",
       });
       return;
     }
 
-    const email = newMemberEmail.trim().toLowerCase();
+    const rows = selectedUsers.map((uid) => ({ project_id: projectId, user_id: uid }));
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast({
-        title: "Invalid Email",
-        description: "Please enter a valid email address",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Look up user in profiles
-    const { data: profile, error: profileError } = await (supabase as any)
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (profileError || !profile) {
-      toast({
-        title: "User Not Found",
-        description: "No user with this email address exists",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Check if already a member
-    if (members.some(m => m.user_id === profile.id)) {
-      toast({
-        title: "Already a Member",
-        description: "This user is already a project member",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Add to project_members
-    const { error: insertError } = await supabase
-      .from("project_members")
-      .insert({
-        project_id: projectId,
-        user_id: profile.id,
-      });
+    const { error: insertError } = await supabase.from("project_members").insert(rows);
 
     if (insertError) {
       toast({
-        title: "Error Adding Member",
+        title: "Error Adding Members",
         description: friendlyError(insertError.message),
         variant: "destructive",
       });
@@ -159,14 +145,28 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     }
 
     toast({
-      title: "Member Added",
-      description: `${email} has been added to the project`,
+      title: "Members Added",
+      description: `${selectedUsers.length} member${selectedUsers.length > 1 ? "s" : ""} added to the project`,
     });
 
-    setNewMemberEmail("");
+    setSelectedUsers([]);
+    setUserSearch("");
     refetchMembers();
     queryClient.invalidateQueries({ queryKey: ["project-members"] });
   };
+
+  const existingMemberIds = new Set<string>([projectOwnerId, ...members.map((m) => m.user_id)]);
+  const filteredUsers = (allUsers || [])
+    .filter((u) => u.email)
+    .filter((u) => !existingMemberIds.has(u.id))
+    .filter((u) => {
+      if (!userSearch.trim()) return true;
+      const q = userSearch.toLowerCase();
+      return (
+        (u.email || "").toLowerCase().includes(q) ||
+        (u.nickname || "").toLowerCase().includes(q)
+      );
+    });
 
   const handleRemoveMember = async (memberId: string, memberEmail: string | null) => {
     const { error } = await supabase
@@ -317,28 +317,74 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
               )}
             </div>
 
-            {/* Add Member Section */}
+            {/* Add Members Section */}
             <div className="command-border bg-card/50 rounded-sm p-4">
-              <h3 className="font-display text-sm tracking-wider mb-4">ADD MEMBER</h3>
-              <div className="flex gap-2">
+              <h3 className="font-display text-sm tracking-wider mb-3">ADD MEMBERS</h3>
+
+              <div className="space-y-2">
                 <Input
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  placeholder="email@example.com"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by email or name"
                   className="bg-input border-border"
-                  onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Showing all users (alphabetical). Owner and existing members are hidden.
+                </p>
+              </div>
+
+              <div className="mt-3 border border-border rounded-sm">
+                <ScrollArea className="h-56">
+                  {loadingAllUsers ? (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      Loading users...
+                    </div>
+                  ) : filteredUsers.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      No users found
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {filteredUsers.map((user) => {
+                        const isSelected = selectedUsers.includes(user.id);
+                        return (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => toggleUserSelection(user.id)}
+                            className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-secondary/40 transition-colors ${isSelected ? "bg-secondary/60" : ""}`}
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">{user.email}</span>
+                              {user.nickname && (
+                                <span className="text-xs text-muted-foreground">{user.nickname}</span>
+                              )}
+                            </div>
+                            <div
+                              className={`w-4 h-4 rounded-sm border ${isSelected ? "bg-primary border-primary" : "border-border"}`}
+                              aria-hidden
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-xs text-muted-foreground">
+                  Selected: {selectedUsers.length}
+                </span>
                 <Button
-                  onClick={handleAddMember}
+                  onClick={handleAddSelectedMembers}
+                  disabled={selectedUsers.length === 0}
                   className="bg-primary hover:bg-primary/90"
                 >
                   <UserPlus className="w-4 h-4 mr-2" />
-                  Add
+                  Add Selected
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                User must have an existing account
-              </p>
             </div>
           </TabsContent>
 

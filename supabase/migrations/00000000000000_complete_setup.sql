@@ -45,6 +45,7 @@ DROP TABLE IF EXISTS public.asset_history CASCADE;
 DROP TABLE IF EXISTS public.project_members CASCADE;
 DROP TABLE IF EXISTS public.assets CASCADE;
 DROP TABLE IF EXISTS public.projects CASCADE;
+DROP TABLE IF EXISTS public.blocked_emails CASCADE;
 DROP TABLE IF EXISTS public.profiles CASCADE;
 
 -- Drop types
@@ -69,6 +70,15 @@ CREATE TABLE public.profiles (
   nickname TEXT,
   avatar_url TEXT,
   role public.profile_role NOT NULL DEFAULT 'user',
+  is_blacklisted BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Blocked emails table (prevents future signups)
+CREATE TABLE public.blocked_emails (
+  email TEXT PRIMARY KEY,
+  reason TEXT,
+  added_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -124,6 +134,7 @@ CREATE TABLE public.asset_history (
 
 CREATE INDEX idx_profiles_role ON public.profiles(role);
 CREATE INDEX idx_profiles_email ON public.profiles(email);
+CREATE UNIQUE INDEX blocked_emails_lower_email_idx ON public.blocked_emails (lower(email));
 CREATE INDEX idx_projects_user_id ON public.projects(user_id);
 CREATE INDEX idx_assets_project_id ON public.assets(project_id);
 CREATE INDEX idx_assets_status ON public.assets(status);
@@ -245,6 +256,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  -- block signup if email is in blocked list
+  IF EXISTS (SELECT 1 FROM public.blocked_emails WHERE lower(email) = lower(NEW.email)) THEN
+    RAISE EXCEPTION 'This email is blocked. Contact support.';
+  END IF;
+
   INSERT INTO public.profiles (id, email, role)
   VALUES (NEW.id, NEW.email, 'user')
   ON CONFLICT (id) DO NOTHING;
@@ -257,6 +273,84 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_new_user();
 
+-- Helper: upsert blocked email
+CREATE OR REPLACE FUNCTION public.block_email(p_email TEXT, p_added_by UUID DEFAULT auth.uid(), p_reason TEXT DEFAULT 'Blacklisted by admin')
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF p_email IS NULL THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO public.blocked_emails (email, reason, added_by)
+  VALUES (lower(p_email), p_reason, p_added_by)
+  ON CONFLICT (email) DO UPDATE
+    SET reason = EXCLUDED.reason,
+        added_by = EXCLUDED.added_by,
+        created_at = now();
+END;
+$$;
+
+-- Helper: set blacklist flag and maintain blocked_emails
+CREATE OR REPLACE FUNCTION public.set_blacklist_status(p_target UUID, p_blacklisted BOOLEAN, p_reason TEXT DEFAULT NULL)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  actor_role public.profile_role;
+  target_email TEXT;
+BEGIN
+  SELECT role INTO actor_role FROM public.profiles WHERE id = auth.uid();
+  IF actor_role <> 'super_admin' THEN
+    RAISE EXCEPTION 'Not allowed';
+  END IF;
+
+  UPDATE public.profiles
+  SET is_blacklisted = p_blacklisted
+  WHERE id = p_target;
+
+  IF p_blacklisted THEN
+    SELECT email INTO target_email FROM public.profiles WHERE id = p_target;
+    IF target_email IS NOT NULL THEN
+      PERFORM public.block_email(target_email, auth.uid(), COALESCE(p_reason, 'Blacklisted by admin'));
+    END IF;
+  ELSE
+    DELETE FROM public.blocked_emails WHERE lower(email) = lower((SELECT email FROM public.profiles WHERE id = p_target));
+  END IF;
+END;
+$$;
+
+-- Helper: delete a user and block their email (super_admin only)
+CREATE OR REPLACE FUNCTION public.admin_delete_user(p_target UUID, p_reason TEXT DEFAULT 'Deleted by super admin')
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  actor_role public.profile_role;
+  target_email TEXT;
+BEGIN
+  SELECT role INTO actor_role FROM public.profiles WHERE id = auth.uid();
+  IF actor_role <> 'super_admin' THEN
+    RAISE EXCEPTION 'Not allowed';
+  END IF;
+
+  SELECT email INTO target_email FROM public.profiles WHERE id = p_target;
+
+  IF target_email IS NOT NULL THEN
+    PERFORM public.block_email(target_email, auth.uid(), p_reason);
+  END IF;
+
+  DELETE FROM auth.users WHERE id = p_target;
+END;
+$$;
+
 -- ================================
 -- 6) ENABLE RLS
 -- ================================
@@ -266,6 +360,7 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.blocked_emails ENABLE ROW LEVEL SECURITY;
 
 -- ================================
 -- 7) RLS POLICIES
@@ -296,7 +391,15 @@ CREATE POLICY "profiles_update_own"
 CREATE POLICY "profiles_update_super_admin"
   ON public.profiles FOR UPDATE
   TO authenticated
-  USING (public.get_user_role(auth.uid()) = 'super_admin');
+  USING (public.get_user_role(auth.uid()) = 'super_admin')
+  WITH CHECK (public.get_user_role(auth.uid()) = 'super_admin');
+
+-- Blocked emails managed only by super_admin
+CREATE POLICY "blocked_emails_manage_super_admin"
+  ON public.blocked_emails FOR ALL
+  TO authenticated
+  USING (public.get_user_role(auth.uid()) = 'super_admin')
+  WITH CHECK (public.get_user_role(auth.uid()) = 'super_admin');
 
 -- ========== PROJECTS ==========
 

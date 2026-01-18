@@ -14,10 +14,10 @@ import { UserProfileModal } from "@/components/UserProfileModal";
 import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
 import { ProjectActivityLog } from "@/components/ProjectActivityLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Terminal, LogOut, Plus, Folder, UserCircle, Settings } from "lucide-react";
+import { Terminal, LogOut, Plus, Folder, UserCircle, Settings, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 interface Project {
   id: string;
@@ -50,6 +51,12 @@ interface Asset {
   updated_at: string;
 }
 
+interface ProfileOption {
+  id: string;
+  email: string | null;
+  nickname: string | null;
+}
+
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -58,11 +65,16 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [newProjectName, setNewProjectName] = useState("");
   const [inviteEmails, setInviteEmails] = useState("");
+  const [allUsers, setAllUsers] = useState<ProfileOption[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [userSearch, setUserSearch] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: profile } = useUserProfile(user?.id || null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -83,6 +95,15 @@ const Dashboard = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  useEffect(() => {
+    if (createDialogOpen) {
+      fetchAllUsers();
+    } else {
+      setSelectedUsers([]);
+      setUserSearch("");
+    }
+  }, [createDialogOpen]);
 
   const fetchProjects = async () => {
     const { data, error } = await supabase
@@ -123,6 +144,27 @@ const Dashboard = () => {
     }
   };
 
+  const fetchAllUsers = async () => {
+    setLoadingUsers(true);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, nickname")
+      .order("email", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Error loading users",
+        description: friendlyError(error.message),
+        variant: "destructive",
+      });
+    } else {
+      setAllUsers((data as ProfileOption[]) || []);
+    }
+
+    setLoadingUsers(false);
+  };
+
   useEffect(() => {
     if (selectedProject) {
       fetchAssets(selectedProject.id);
@@ -132,6 +174,12 @@ const Dashboard = () => {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
   };
 
   const createProject = async () => {
@@ -153,8 +201,7 @@ const Dashboard = () => {
       return;
     }
 
-    // Process member invites if any
-    let invitedCount = 0;
+    const memberIdsToAdd = new Set<string>(selectedUsers);
     const invalidEmails: string[] = [];
 
     if (inviteEmails.trim()) {
@@ -187,27 +234,40 @@ const Dashboard = () => {
           .single();
 
         if (profile) {
-          // Add to project_members
-          const { error: memberError } = await supabase
-            .from("project_members")
-            .insert({
-              project_id: data.id,
-              user_id: profile.id,
-            });
-
-          if (!memberError) {
-            invitedCount++;
-          }
+          memberIdsToAdd.add(profile.id);
         } else {
           invalidEmails.push(email);
         }
       }
     }
 
+    let addedMembers = 0;
+
+    if (memberIdsToAdd.size > 0) {
+      const memberRows = Array.from(memberIdsToAdd).map((uid) => ({
+        project_id: data.id,
+        user_id: uid,
+      }));
+
+      const { error: memberInsertError } = await supabase
+        .from("project_members")
+        .insert(memberRows);
+
+      if (memberInsertError) {
+        toast({
+          title: "Error adding members",
+          description: friendlyError(memberInsertError.message),
+          variant: "destructive",
+        });
+      } else {
+        addedMembers = memberRows.length;
+      }
+    }
+
     // Show success toast with invite results
     let description = `${newProjectName} has been created.`;
-    if (invitedCount > 0) {
-      description += ` ${invitedCount} member${invitedCount > 1 ? 's' : ''} invited.`;
+    if (addedMembers > 0) {
+      description += ` ${addedMembers} member${addedMembers > 1 ? "s" : ""} added.`;
     }
     if (invalidEmails.length > 0) {
       toast({
@@ -226,6 +286,8 @@ const Dashboard = () => {
     setSelectedProject(data);
     setNewProjectName("");
     setInviteEmails("");
+    setSelectedUsers([]);
+    setUserSearch("");
     setCreateDialogOpen(false);
   };
 
@@ -401,6 +463,18 @@ const Dashboard = () => {
   const healthPercentage = assets.length > 0 ? (implementedCount / assets.length) * 100 : 0;
   const isHighRisk = healthPercentage < 50 && assets.length > 0;
 
+  const filteredUsers = allUsers
+    .filter((u) => u.email)
+    .filter((u) => u.id !== user?.id)
+    .filter((u) => {
+      if (!userSearch.trim()) return true;
+      const q = userSearch.toLowerCase();
+      return (
+        (u.email || "").toLowerCase().includes(q) ||
+        (u.nickname || "").toLowerCase().includes(q)
+      );
+    });
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -441,6 +515,17 @@ const Dashboard = () => {
               >
                 <UserCircle className="w-5 h-5" />
               </Button>
+              {profile?.role === "super_admin" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/admin-dashboard")}
+                  className="text-primary hover:text-primary/80"
+                  title="Admin Dashboard"
+                >
+                  <Shield className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -503,19 +588,61 @@ const Dashboard = () => {
                           onChange={(e) => setNewProjectName(e.target.value)}
                           placeholder="Project codename..."
                           className="bg-input border-border"
-                          onKeyDown={(e) => e.key === "Enter" && !inviteEmails && createProject()}
+                          onKeyDown={(e) => e.key === "Enter" && createProject()}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Textarea
-                          value={inviteEmails}
-                          onChange={(e) => setInviteEmails(e.target.value)}
-                          placeholder="Invite team members (comma-separated emails)&#10;Example: alice@team.com, bob@team.com"
-                          className="bg-input border-border min-h-[80px]"
+                        <Input
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          placeholder="Search existing users by email or name"
+                          className="bg-input border-border"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Optional: Invite members who already have accounts
+                          Add existing members now. You're automatically set as the owner.
                         </p>
+                      </div>
+                      <div className="mt-2 border border-border rounded-sm">
+                        <ScrollArea className="h-48">
+                          {loadingUsers ? (
+                            <div className="text-center py-4 text-muted-foreground text-sm">
+                              Loading users...
+                            </div>
+                          ) : filteredUsers.length === 0 ? (
+                            <div className="text-center py-4 text-muted-foreground text-sm">
+                              No users found
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-border">
+                              {filteredUsers.map((profile) => {
+                                const isSelected = selectedUsers.includes(profile.id);
+                                return (
+                                  <button
+                                    key={profile.id}
+                                    type="button"
+                                    onClick={() => toggleUserSelection(profile.id)}
+                                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-secondary/40 transition-colors ${isSelected ? "bg-secondary/60" : ""}`}
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">{profile.email}</span>
+                                      {profile.nickname && (
+                                        <span className="text-xs text-muted-foreground">{profile.nickname}</span>
+                                      )}
+                                    </div>
+                                    <div
+                                      className={`w-4 h-4 rounded-sm border ${isSelected ? "bg-primary border-primary" : "border-border"}`}
+                                      aria-hidden
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </ScrollArea>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Selected: {selectedUsers.length}</span>
+                        <span>Selected members are added on create</span>
                       </div>
                       <Button
                         onClick={createProject}
