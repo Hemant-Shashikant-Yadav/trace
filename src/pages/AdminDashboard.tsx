@@ -35,6 +35,16 @@ interface AdminUser {
   created_at: string;
 }
 
+interface AdminProjectRole {
+  membership_id: string;
+  project_id: string;
+  project_name: string;
+  user_id: string;
+  user_email: string | null;
+  user_nickname: string | null;
+  role: "member" | "project_owner";
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -45,6 +55,7 @@ const AdminDashboard = () => {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [filterUserText, setFilterUserText] = useState("");
+  const [projectRoles, setProjectRoles] = useState<AdminProjectRole[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -60,6 +71,7 @@ const AdminDashboard = () => {
     if (profile?.role === "super_admin") {
       loadProjects();
       loadUsers();
+      loadProjectRoles();
     }
   }, [profile?.role]);
 
@@ -216,6 +228,7 @@ const AdminDashboard = () => {
 
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     toast({ title: "User deleted & blocked", description: email || userId });
+    loadProjectRoles();
   };
 
   const filteredUsers = useMemo(() => {
@@ -225,6 +238,88 @@ const AdminDashboard = () => {
       (u.email || "").toLowerCase().includes(q) || (u.nickname || "").toLowerCase().includes(q)
     );
   }, [users, filterUserText]);
+
+  const loadProjectRoles = async () => {
+    const { data, error } = await supabase
+      .from("project_members")
+      .select("id, role, project_id, user_id, projects(name)")
+      .order("project_id", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Error loading project roles",
+        description: friendlyError(error.message),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const memberships = data || [];
+    const userIds = Array.from(new Set(memberships.map((m: any) => m.user_id).filter(Boolean)));
+
+    let profiles: Record<string, { email: string | null; nickname: string | null }> = {};
+    if (userIds.length > 0) {
+      const { data: profileRows, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, email, nickname")
+        .in("id", userIds);
+
+      if (profileError) {
+        toast({
+          title: "Error loading member profiles",
+          description: friendlyError(profileError.message),
+          variant: "destructive",
+        });
+      } else {
+        profiles = (profileRows || []).reduce((acc: any, row: any) => {
+          acc[row.id] = { email: row.email, nickname: row.nickname };
+          return acc;
+        }, {});
+      }
+    }
+
+    const mapped: AdminProjectRole[] = memberships.map((row: any) => {
+      const prof = profiles[row.user_id] || {};
+      return {
+        membership_id: row.id,
+        project_id: row.project_id,
+        project_name: row.projects?.name || "",
+        user_id: row.user_id,
+        user_email: prof.email || null,
+        user_nickname: prof.nickname || null,
+        role: row.role,
+      };
+    });
+
+    setProjectRoles(mapped);
+  };
+
+  const handleProjectRoleChange = async (
+    membershipId: string,
+    nextRole: AdminProjectRole["role"],
+  ) => {
+    const { error } = await supabase
+      .from("project_members")
+      .update({ role: nextRole })
+      .eq("id", membershipId);
+
+    if (error) {
+      toast({
+        title: "Role update failed",
+        description: friendlyError(error.message),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setProjectRoles((prev) =>
+      prev.map((pr) =>
+        pr.membership_id === membershipId ? { ...pr, role: nextRole } : pr,
+      ),
+    );
+
+    toast({ title: "Project role updated", description: `Member is now ${nextRole}` });
+  };
 
   if (!authUserId) {
     return null;
@@ -267,6 +362,7 @@ const AdminDashboard = () => {
           <TabsList className="bg-secondary">
             <TabsTrigger value="projects">Projects</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="project-roles">Project Roles</TabsTrigger>
           </TabsList>
 
           <TabsContent value="projects" className="mt-4 space-y-4">
@@ -393,6 +489,56 @@ const AdminDashboard = () => {
                             >
                               Delete
                             </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="project-roles" className="mt-4 space-y-4">
+            <Card className="command-border bg-card/60">
+              <CardHeader>
+                <CardTitle>Project-Level Roles</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {projectRoles.length === 0 ? (
+                  <div className="text-muted-foreground">No memberships found.</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Role</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {projectRoles.map((pr, idx) => (
+                        <TableRow key={`${pr.project_id}-${pr.user_id}-${idx}`}>
+                          <TableCell>{pr.project_name}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{pr.user_email || "Unknown"}</div>
+                            <div className="text-xs text-muted-foreground">{pr.user_nickname || "No nickname"}</div>
+                          </TableCell>
+                          <TableCell className="w-48">
+                            <Select
+                              value={pr.role}
+                              onValueChange={(val) =>
+                                handleProjectRoleChange(pr.membership_id, val as AdminProjectRole["role"])
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Role" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="member">Member</SelectItem>
+                                <SelectItem value="project_owner">Project Owner</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                         </TableRow>
                       ))}

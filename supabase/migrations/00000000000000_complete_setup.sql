@@ -24,6 +24,7 @@ DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 DROP FUNCTION IF EXISTS public.get_user_role(UUID) CASCADE;
 DROP FUNCTION IF EXISTS public.is_project_member(UUID, UUID) CASCADE;
 DROP FUNCTION IF EXISTS public.is_project_owner(UUID, UUID) CASCADE;
+DROP FUNCTION IF EXISTS public.is_project_admin(UUID, UUID) CASCADE;
 DROP FUNCTION IF EXISTS public.has_project_access(UUID, UUID) CASCADE;
 
 -- Drop all existing policies safely
@@ -51,6 +52,7 @@ DROP TABLE IF EXISTS public.profiles CASCADE;
 -- Drop types
 DROP TYPE IF EXISTS public.asset_status CASCADE;
 DROP TYPE IF EXISTS public.profile_role CASCADE;
+DROP TYPE IF EXISTS public.project_member_role CASCADE;
 
 -- ================================
 -- 1) CREATE TYPES
@@ -58,6 +60,7 @@ DROP TYPE IF EXISTS public.profile_role CASCADE;
 
 CREATE TYPE public.asset_status AS ENUM ('pending', 'received', 'implemented');
 CREATE TYPE public.profile_role AS ENUM ('super_admin', 'product_owner', 'user');
+CREATE TYPE public.project_member_role AS ENUM ('member', 'project_owner');
 
 -- ================================
 -- 2) CREATE TABLES
@@ -114,6 +117,7 @@ CREATE TABLE public.project_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.project_member_role NOT NULL DEFAULT 'member',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(project_id, user_id)
 );
@@ -185,6 +189,26 @@ AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.projects 
     WHERE id = p_project_id AND user_id = p_user_id
+  );
+$$;
+
+-- Function to check project-level admin (creator or member with project_owner role)
+CREATE OR REPLACE FUNCTION public.is_project_admin(p_project_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.projects pr
+    WHERE pr.id = p_project_id AND pr.user_id = p_user_id
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.project_members pm
+    WHERE pm.project_id = p_project_id
+      AND pm.user_id = p_user_id
+      AND pm.role = 'project_owner'
   );
 $$;
 
@@ -427,11 +451,11 @@ CREATE POLICY "projects_update"
   ON public.projects FOR UPDATE
   TO authenticated
   USING (
-    user_id = auth.uid()
+    public.is_project_admin(id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   )
   WITH CHECK (
-    user_id = auth.uid()
+    public.is_project_admin(id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 
@@ -440,7 +464,7 @@ CREATE POLICY "projects_delete"
   ON public.projects FOR DELETE
   TO authenticated
   USING (
-    user_id = auth.uid()
+    public.is_project_admin(id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 
@@ -452,7 +476,7 @@ CREATE POLICY "project_members_select"
   TO authenticated
   USING (
     user_id = auth.uid()
-    OR public.is_project_owner(project_id, auth.uid())
+    OR public.is_project_admin(project_id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 
@@ -461,7 +485,7 @@ CREATE POLICY "project_members_insert"
   ON public.project_members FOR INSERT
   TO authenticated
   WITH CHECK (
-    public.is_project_owner(project_id, auth.uid())
+    public.is_project_admin(project_id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 
@@ -470,7 +494,20 @@ CREATE POLICY "project_members_delete"
   ON public.project_members FOR DELETE
   TO authenticated
   USING (
-    public.is_project_owner(project_id, auth.uid())
+    public.is_project_admin(project_id, auth.uid())
+    OR public.get_user_role(auth.uid()) = 'super_admin'
+  );
+
+-- UPDATE: Project admin or super_admin can update member role
+CREATE POLICY "project_members_update"
+  ON public.project_members FOR UPDATE
+  TO authenticated
+  USING (
+    public.is_project_admin(project_id, auth.uid())
+    OR public.get_user_role(auth.uid()) = 'super_admin'
+  )
+  WITH CHECK (
+    public.is_project_admin(project_id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 
@@ -512,7 +549,7 @@ CREATE POLICY "assets_delete"
   ON public.assets FOR DELETE
   TO authenticated
   USING (
-    public.is_project_owner(project_id, auth.uid())
+    public.is_project_admin(project_id, auth.uid())
     OR public.get_user_role(auth.uid()) = 'super_admin'
   );
 

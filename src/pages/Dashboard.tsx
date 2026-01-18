@@ -57,6 +57,8 @@ interface ProfileOption {
   nickname: string | null;
 }
 
+type ProjectMemberRole = "member" | "project_owner" | "none";
+
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -72,6 +74,7 @@ const Dashboard = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [projectRole, setProjectRole] = useState<ProjectMemberRole>("none");
   const navigate = useNavigate();
   const { toast } = useToast();
   const { data: profile } = useUserProfile(user?.id || null);
@@ -168,12 +171,36 @@ const Dashboard = () => {
   useEffect(() => {
     if (selectedProject) {
       fetchAssets(selectedProject.id);
+      fetchProjectRole(selectedProject.id);
     }
   }, [selectedProject]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
+  };
+
+  const fetchProjectRole = async (projectId: string) => {
+    if (!user) return;
+
+    if (selectedProject && selectedProject.user_id === user.id) {
+      setProjectRole("project_owner");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("project_members")
+      .select("role")
+      .eq("project_id", projectId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (error || !data) {
+      setProjectRole("none");
+      return;
+    }
+
+    setProjectRole((data.role as ProjectMemberRole) || "member");
   };
 
   const toggleUserSelection = (userId: string) => {
@@ -243,10 +270,14 @@ const Dashboard = () => {
 
     let addedMembers = 0;
 
+    // Always add creator as project_owner role row
+    memberIdsToAdd.add(user.id);
+
     if (memberIdsToAdd.size > 0) {
       const memberRows = Array.from(memberIdsToAdd).map((uid) => ({
         project_id: data.id,
         user_id: uid,
+        role: uid === user.id ? "project_owner" : "member",
       }));
 
       const { error: memberInsertError } = await supabase
@@ -284,6 +315,7 @@ const Dashboard = () => {
 
     setProjects([data, ...projects]);
     setSelectedProject(data);
+    setProjectRole("project_owner");
     setNewProjectName("");
     setInviteEmails("");
     setSelectedUsers([]);
@@ -475,6 +507,18 @@ const Dashboard = () => {
       );
     });
 
+  const canManageProject = Boolean(
+    selectedProject &&
+    user &&
+    (
+      selectedProject.user_id === user.id ||
+      projectRole === "project_owner" ||
+      profile?.role === "super_admin"
+    )
+  );
+
+  const canCreateProject = profile?.role === "product_owner" || profile?.role === "super_admin";
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -551,112 +595,120 @@ const Dashboard = () => {
               onSelect={setSelectedProject}
             />
 
-            {/* Settings Icon (Owner Only) */}
-            {selectedProject && user && selectedProject.user_id === user.id && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSettingsModalOpen(true)}
-                  className="text-muted-foreground hover:text-primary transition-colors"
-                  title="Project Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
+            {/* Settings always for project-level admin; new project only for global creator roles */}
+            {canManageProject && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSettingsModalOpen(true)}
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title="Project Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
 
-                <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      NEW PROJECT
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="bg-card border-border">
-                    <DialogHeader>
-                      <DialogTitle className="font-display tracking-wider text-foreground">
-                        Initialize New Project
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Input
-                          value={newProjectName}
-                          onChange={(e) => setNewProjectName(e.target.value)}
-                          placeholder="Project codename..."
-                          className="bg-input border-border"
-                          onKeyDown={(e) => e.key === "Enter" && createProject()}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Input
-                          value={userSearch}
-                          onChange={(e) => setUserSearch(e.target.value)}
-                          placeholder="Search existing users by email or name"
-                          className="bg-input border-border"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Add existing members now. You're automatically set as the owner.
-                        </p>
-                      </div>
-                      <div className="mt-2 border border-border rounded-sm">
-                        <ScrollArea className="h-48">
-                          {loadingUsers ? (
-                            <div className="text-center py-4 text-muted-foreground text-sm">
-                              Loading users...
-                            </div>
-                          ) : filteredUsers.length === 0 ? (
-                            <div className="text-center py-4 text-muted-foreground text-sm">
-                              No users found
-                            </div>
-                          ) : (
-                            <div className="divide-y divide-border">
-                              {filteredUsers.map((profile) => {
-                                const isSelected = selectedUsers.includes(profile.id);
-                                return (
-                                  <button
-                                    key={profile.id}
-                                    type="button"
-                                    onClick={() => toggleUserSelection(profile.id)}
-                                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-secondary/40 transition-colors ${isSelected ? "bg-secondary/60" : ""}`}
-                                  >
-                                    <div className="flex flex-col">
-                                      <span className="text-sm font-medium">{profile.email}</span>
-                                      {profile.nickname && (
-                                        <span className="text-xs text-muted-foreground">{profile.nickname}</span>
-                                      )}
-                                    </div>
-                                    <div
-                                      className={`w-4 h-4 rounded-sm border ${isSelected ? "bg-primary border-primary" : "border-border"}`}
-                                      aria-hidden
-                                    />
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </ScrollArea>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Selected: {selectedUsers.length}</span>
-                        <span>Selected members are added on create</span>
-                      </div>
-                      <Button
-                        onClick={createProject}
-                        className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      >
-                        CREATE PROJECT
-                      </Button>
+            {canCreateProject && (
+              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    NEW PROJECT
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-card border-border">
+                  <DialogHeader>
+                    <DialogTitle className="font-display tracking-wider text-foreground">
+                      Initialize New Project
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Input
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="Project codename..."
+                        className="bg-input border-border"
+                        onKeyDown={(e) => e.key === "Enter" && createProject()}
+                      />
                     </div>
-                  </DialogContent>
-                </Dialog>
-              </>
+                    <div className="space-y-2">
+                      <Input
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        placeholder="Search existing users by email or name"
+                        className="bg-input border-border"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Add existing members now. You're automatically set as the owner.
+                      </p>
+                    </div>
+                    <div className="mt-2 border border-border rounded-sm">
+                      <ScrollArea className="h-48">
+                        {loadingUsers ? (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            Loading users...
+                          </div>
+                        ) : filteredUsers.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            No users found
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-border">
+                            {filteredUsers.map((profile) => {
+                              const isSelected = selectedUsers.includes(profile.id);
+                              return (
+                                <button
+                                  key={profile.id}
+                                  type="button"
+                                  onClick={() => toggleUserSelection(profile.id)}
+                                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-secondary/40 transition-colors ${isSelected ? "bg-secondary/60" : ""}`}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{profile.email}</span>
+                                    {profile.nickname && (
+                                      <span className="text-xs text-muted-foreground">{profile.nickname}</span>
+                                    )}
+                                  </div>
+                                  <div
+                                    className={`w-4 h-4 rounded-sm border ${isSelected ? "bg-primary border-primary" : "border-border"}`}
+                                    aria-hidden
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </ScrollArea>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Selected: {selectedUsers.length}</span>
+                      <span>Selected members are added on create</span>
+                    </div>
+                    <Button
+                      onClick={createProject}
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      CREATE PROJECT
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             )}
 
           </div>
+
+          {selectedProject && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono">Global: {profile?.role || "user"}</span>
+              <span className="hidden sm:block">•</span>
+              <span className="font-mono">Project: {projectRole}</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             {selectedProject && assets.length > 0 && (
