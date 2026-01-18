@@ -129,6 +129,7 @@ CREATE TABLE public.asset_history (
   changed_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   old_status public.asset_status NOT NULL,
   new_status public.asset_status NOT NULL,
+  comment TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -260,8 +261,14 @@ SET search_path = public
 AS $$
 BEGIN
   IF (TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status) THEN
-    INSERT INTO public.asset_history (asset_id, changed_by, old_status, new_status)
-    VALUES (NEW.id, auth.uid(), OLD.status, NEW.status);
+    INSERT INTO public.asset_history (asset_id, changed_by, old_status, new_status, comment)
+    VALUES (
+      NEW.id,
+      auth.uid(),
+      OLD.status,
+      NEW.status,
+      COALESCE(NEW.notes, OLD.notes)
+    );
   END IF;
   RETURN NEW;
 END;
