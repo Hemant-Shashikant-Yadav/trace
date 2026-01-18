@@ -42,6 +42,7 @@ interface ProjectMemberWithProfile {
   user_id: string;
   email: string | null;
   nickname: string | null;
+  role: "member" | "project_owner";
 }
 
 interface ProfileOption {
@@ -72,7 +73,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
       // Get project members
       const { data: memberData, error: memberError } = await supabase
         .from("project_members")
-        .select("id, user_id")
+        .select("id, user_id, role")
         .eq("project_id", projectId);
 
       if (memberError) throw memberError;
@@ -92,6 +93,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
           user_id: member.user_id,
           email: profile?.email || null,
           nickname: profile?.nickname || null,
+          role: member.role as "member" | "project_owner",
         });
       }
 
@@ -131,7 +133,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
       return;
     }
 
-    const rows = selectedUsers.map((uid) => ({ project_id: projectId, user_id: uid }));
+    const rows = selectedUsers.map((uid) => ({ project_id: projectId, user_id: uid, role: "member" }));
 
     const { error: insertError } = await supabase.from("project_members").insert(rows);
 
@@ -186,6 +188,30 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     toast({
       title: "Member Removed",
       description: `${memberEmail || "Member"} has been removed from the project`,
+    });
+
+    refetchMembers();
+    queryClient.invalidateQueries({ queryKey: ["project-members"] });
+  };
+
+  const handleRoleChange = async (memberId: string, nextRole: "member" | "project_owner") => {
+    const { error } = await supabase
+      .from("project_members")
+      .update({ role: nextRole })
+      .eq("id", memberId);
+
+    if (error) {
+      toast({
+        title: "Error updating role",
+        description: friendlyError(error.message),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Role updated",
+      description: `Member is now ${nextRole === "project_owner" ? "Project Owner" : "Member"}`,
     });
 
     refetchMembers();
@@ -272,6 +298,9 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                         <span className="text-sm">
                           {member.nickname || member.email || "Unknown User"}
                         </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-sm border ${member.role === "project_owner" ? "border-primary text-primary" : "border-border text-muted-foreground"}`}>
+                            {member.role === "project_owner" ? "Project Owner" : "Member"}
+                          </span>
                         {member.user_id === projectOwnerId && (
                           <span className="text-xs text-primary font-mono">(Owner)</span>
                         )}
@@ -310,6 +339,28 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
+                      )}
+
+                      {member.user_id !== projectOwnerId && (
+                        <div className="flex gap-2 ml-2">
+                          {member.role === "member" ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleRoleChange(member.id, "project_owner")}
+                            >
+                              Make Project Owner
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRoleChange(member.id, "member")}
+                            >
+                              Demote to Member
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
