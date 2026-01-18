@@ -24,6 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { friendlyError } from "@/lib/utils";
 
 interface ProjectSettingsModalProps {
   isOpen: boolean;
@@ -151,7 +152,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     if (insertError) {
       toast({
         title: "Error Adding Member",
-        description: insertError.message,
+        description: friendlyError(insertError.message),
         variant: "destructive",
       });
       return;
@@ -176,7 +177,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     if (error) {
       toast({
         title: "Error Removing Member",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
       return;
@@ -209,7 +210,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     if (error) {
       toast({
         title: "Error Deleting Project",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
       return;

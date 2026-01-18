@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
+import { friendlyError } from "@/lib/utils";
 import { ProjectHealthBar } from "@/components/ProjectHealthBar";
 import { ImportStructure } from "@/components/ImportStructure";
 import { AssetTable } from "@/components/AssetTable";
@@ -92,7 +93,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Error fetching projects",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
@@ -114,7 +115,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Error fetching assets",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
@@ -146,7 +147,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Error creating project",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
       return;
@@ -235,7 +236,7 @@ const Dashboard = () => {
       // Extract folder from path (everything before the last /)
       const lastSlashIndex = path.lastIndexOf("/");
       const folder = lastSlashIndex > 0 ? path.substring(0, lastSlashIndex) : null;
-      
+
       return {
         project_id: selectedProject.id,
         name: path.split("/").pop() || path,
@@ -250,7 +251,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Import Failed",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
@@ -280,10 +281,10 @@ const Dashboard = () => {
 
     // Check for backward transitions and increment revision_count
     // Note: The database trigger will also handle this, but we update local state
-    const isBackwardTransition = 
+    const isBackwardTransition =
       (currentAsset.status === "implemented" && (newStatus === "received" || newStatus === "pending")) ||
       (currentAsset.status === "received" && newStatus === "pending");
-    
+
     if (isBackwardTransition) {
       updates.revision_count = currentAsset.revision_count + 1;
     }
@@ -296,7 +297,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Update Failed",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
@@ -316,23 +317,23 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Update Failed",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
       // Use functional setState to ensure we're working with latest state
       setAssets((prevAssets) =>
         prevAssets.map((asset) =>
-          asset.id === assetId 
-            ? { ...asset, assigned_to: assignedTo || null, updated_at: new Date().toISOString() } 
+          asset.id === assetId
+            ? { ...asset, assigned_to: assignedTo || null, updated_at: new Date().toISOString() }
             : asset
         )
       );
-      
+
       toast({
         title: "Assignment Updated",
-        description: assignedTo 
-          ? `Task assigned to ${assignedTo}` 
+        description: assignedTo
+          ? `Task assigned to ${assignedTo}`
           : "Task unassigned",
       });
     }
@@ -347,13 +348,13 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Delete Failed",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
       // Use functional setState to ensure we're working with latest state
       setAssets((prevAssets) => prevAssets.filter((asset) => asset.id !== assetId));
-      
+
       toast({
         title: "Asset Deleted",
         description: "The asset has been removed from tracking.",
@@ -383,7 +384,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Bulk Update Failed",
-        description: error.message,
+        description: friendlyError(error.message),
         variant: "destructive",
       });
     } else {
@@ -413,7 +414,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background grid-pattern relative">
       <div className="absolute inset-0 scanlines pointer-events-none" />
-      
+
       {/* Top Bar */}
       <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
@@ -464,67 +465,70 @@ const Dashboard = () => {
               selectedProject={selectedProject}
               onSelect={setSelectedProject}
             />
-            
+
             {/* Settings Icon (Owner Only) */}
             {selectedProject && user && selectedProject.user_id === user.id && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSettingsModalOpen(true)}
-                className="text-muted-foreground hover:text-primary transition-colors"
-                title="Project Settings"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            )}
-            
-            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-              <DialogTrigger asChild>
+              <>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  onClick={() => setSettingsModalOpen(true)}
+                  className="text-muted-foreground hover:text-primary transition-colors"
+                  title="Project Settings"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  NEW PROJECT
+                  <Settings className="w-4 h-4" />
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-card border-border">
-                <DialogHeader>
-                  <DialogTitle className="font-display tracking-wider text-foreground">
-                    Initialize New Project
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Input
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      placeholder="Project codename..."
-                      className="bg-input border-border"
-                      onKeyDown={(e) => e.key === "Enter" && !inviteEmails && createProject()}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Textarea
-                      value={inviteEmails}
-                      onChange={(e) => setInviteEmails(e.target.value)}
-                      placeholder="Invite team members (comma-separated emails)&#10;Example: alice@team.com, bob@team.com"
-                      className="bg-input border-border min-h-[80px]"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Optional: Invite members who already have accounts
-                    </p>
-                  </div>
-                  <Button
-                    onClick={createProject}
-                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    CREATE PROJECT
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+
+                <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      NEW PROJECT
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="bg-card border-border">
+                    <DialogHeader>
+                      <DialogTitle className="font-display tracking-wider text-foreground">
+                        Initialize New Project
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                      <div className="space-y-2">
+                        <Input
+                          value={newProjectName}
+                          onChange={(e) => setNewProjectName(e.target.value)}
+                          placeholder="Project codename..."
+                          className="bg-input border-border"
+                          onKeyDown={(e) => e.key === "Enter" && !inviteEmails && createProject()}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Textarea
+                          value={inviteEmails}
+                          onChange={(e) => setInviteEmails(e.target.value)}
+                          placeholder="Invite team members (comma-separated emails)&#10;Example: alice@team.com, bob@team.com"
+                          className="bg-input border-border min-h-[80px]"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Optional: Invite members who already have accounts
+                        </p>
+                      </div>
+                      <Button
+                        onClick={createProject}
+                        className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        CREATE PROJECT
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </>
+            )}
+
           </div>
 
           <div className="flex items-center gap-3">
@@ -559,20 +563,20 @@ const Dashboard = () => {
           <div className="mt-6">
             <Tabs defaultValue="assets" className="w-full">
               <TabsList className="grid w-full max-w-md grid-cols-3 bg-secondary">
-                <TabsTrigger 
-                  value="assets" 
+                <TabsTrigger
+                  value="assets"
                   className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
                 >
                   ASSETS
                 </TabsTrigger>
-                <TabsTrigger 
-                  value="overview" 
+                <TabsTrigger
+                  value="overview"
                   className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
                 >
                   OVERVIEW
                 </TabsTrigger>
-                <TabsTrigger 
-                  value="logs" 
+                <TabsTrigger
+                  value="logs"
                   className="font-display text-xs tracking-wider data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
                 >
                   LOGS
